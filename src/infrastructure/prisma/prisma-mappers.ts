@@ -1,0 +1,210 @@
+import type { Prisma } from "@prisma/client";
+import type {
+  CandidateResult,
+  JobProfile,
+  SearchEvent,
+  SearchRun,
+} from "../../domain/types.js";
+
+export type JobProfilePersistenceRecord = {
+  id: string;
+  title: string;
+  jdText: string;
+  status: JobProfile["status"];
+  searchCondition: Prisma.JsonValue;
+  hardRequirements: Prisma.JsonValue;
+  softRequirements: Prisma.JsonValue;
+  confirmedAt: Date | null;
+};
+
+export type SearchRunPersistenceRecord = {
+  id: string;
+  jobProfileId: string;
+  status: SearchRun["status"];
+  targetResultCount: number;
+  interruptedReason: string | null;
+  failureReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  candidates: CandidateResultPersistenceRecord[];
+  events: SearchEventPersistenceRecord[];
+};
+
+export type CandidateResultPersistenceRecord = {
+  id: string;
+  fingerprint: string;
+  jobProfileId: string;
+  searchRunId: string;
+  status: CandidateResult["status"];
+  resume: Prisma.JsonValue;
+  intent: string;
+  activityLevel: string;
+  sourceLead: Prisma.JsonValue;
+  hardRejectReasons: Prisma.JsonValue;
+  matchAssessment: Prisma.JsonValue | null;
+};
+
+export type SearchEventPersistenceRecord = {
+  type: SearchEvent["type"];
+  sequence: number;
+  occurredAt: Date;
+  reason: string | null;
+  metadata: Prisma.JsonValue | null;
+};
+
+export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfileRecordCreateInput {
+  return {
+    id: jobProfile.id,
+    title: jobProfile.title,
+    jdText: jobProfile.jdText,
+    status: jobProfile.status,
+    searchCondition: toJsonInput(jobProfile.searchCondition),
+    hardRequirements: toJsonInput(jobProfile.hardRequirements),
+    softRequirements: toJsonInput(jobProfile.softRequirements),
+    confirmedAt: jobProfile.confirmedAt ?? null,
+  };
+}
+
+export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfileRecordUpdateInput {
+  return {
+    title: jobProfile.title,
+    jdText: jobProfile.jdText,
+    status: jobProfile.status,
+    searchCondition: toJsonInput(jobProfile.searchCondition),
+    hardRequirements: toJsonInput(jobProfile.hardRequirements),
+    softRequirements: toJsonInput(jobProfile.softRequirements),
+    confirmedAt: jobProfile.confirmedAt ?? null,
+  };
+}
+
+export function toJobProfileDomain(record: JobProfilePersistenceRecord): JobProfile {
+  return {
+    id: record.id,
+    title: record.title,
+    jdText: record.jdText,
+    status: record.status,
+    searchCondition: record.searchCondition as unknown as JobProfile["searchCondition"],
+    hardRequirements: record.hardRequirements as unknown as JobProfile["hardRequirements"],
+    softRequirements: record.softRequirements as unknown as JobProfile["softRequirements"],
+    confirmedAt: record.confirmedAt ?? undefined,
+  };
+}
+
+export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun {
+  return {
+    id: record.id,
+    jobProfileId: record.jobProfileId,
+    status: record.status,
+    targetResultCount: record.targetResultCount,
+    interruptedReason: record.interruptedReason ?? undefined,
+    failureReason: record.failureReason ?? undefined,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    candidates: record.candidates.map(toCandidateResultDomain),
+    events: record.events
+      .sort((left, right) => left.sequence - right.sequence)
+      .map(toSearchEventDomain),
+  };
+}
+
+export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRecordCreateInput {
+  return {
+    id: searchRun.id,
+    jobProfile: {
+      connect: {
+        id: searchRun.jobProfileId,
+      },
+    },
+    status: searchRun.status,
+    targetResultCount: searchRun.targetResultCount,
+    interruptedReason: searchRun.interruptedReason ?? null,
+    failureReason: searchRun.failureReason ?? null,
+    createdAt: searchRun.createdAt,
+    updatedAt: searchRun.updatedAt,
+    candidates: {
+      create: searchRun.candidates.map(toCandidateResultCreateWithoutSearchRunInput),
+    },
+    events: {
+      create: searchRun.events.map(toSearchEventCreateWithoutSearchRunInput),
+    },
+  };
+}
+
+export function toSearchRunUpdateInput(searchRun: SearchRun): Prisma.SearchRunRecordUpdateInput {
+  return {
+    status: searchRun.status,
+    targetResultCount: searchRun.targetResultCount,
+    interruptedReason: searchRun.interruptedReason ?? null,
+    failureReason: searchRun.failureReason ?? null,
+    createdAt: searchRun.createdAt,
+    updatedAt: searchRun.updatedAt,
+    candidates: {
+      deleteMany: {},
+      create: searchRun.candidates.map(toCandidateResultCreateWithoutSearchRunInput),
+    },
+    events: {
+      deleteMany: {},
+      create: searchRun.events.map(toSearchEventCreateWithoutSearchRunInput),
+    },
+  };
+}
+
+function toCandidateResultDomain(record: CandidateResultPersistenceRecord): CandidateResult {
+  return {
+    id: record.id,
+    fingerprint: record.fingerprint,
+    jobProfileId: record.jobProfileId,
+    searchRunId: record.searchRunId,
+    status: record.status,
+    resume: record.resume as unknown as CandidateResult["resume"],
+    intent: record.intent,
+    activityLevel: record.activityLevel,
+    sourceLead: record.sourceLead as unknown as CandidateResult["sourceLead"],
+    hardRejectReasons: record.hardRejectReasons as unknown as string[],
+    matchAssessment:
+      (record.matchAssessment as unknown as CandidateResult["matchAssessment"] | null) ?? undefined,
+  };
+}
+
+function toCandidateResultCreateWithoutSearchRunInput(
+  candidate: CandidateResult,
+): Prisma.CandidateResultRecordCreateWithoutSearchRunInput {
+  return {
+    id: candidate.id,
+    fingerprint: candidate.fingerprint,
+    jobProfileId: candidate.jobProfileId,
+    status: candidate.status,
+    resume: toJsonInput(candidate.resume),
+    intent: candidate.intent,
+    activityLevel: candidate.activityLevel,
+    sourceLead: toJsonInput(candidate.sourceLead),
+    hardRejectReasons: toJsonInput(candidate.hardRejectReasons),
+    matchAssessment: candidate.matchAssessment ? toJsonInput(candidate.matchAssessment) : undefined,
+  };
+}
+
+function toSearchEventDomain(record: SearchEventPersistenceRecord): SearchEvent {
+  return {
+    type: record.type,
+    occurredAt: record.occurredAt,
+    reason: record.reason ?? undefined,
+    metadata: (record.metadata as unknown as SearchEvent["metadata"] | null) ?? undefined,
+  };
+}
+
+function toSearchEventCreateWithoutSearchRunInput(
+  event: SearchEvent,
+  index: number,
+): Prisma.SearchEventRecordCreateWithoutSearchRunInput {
+  return {
+    type: event.type,
+    sequence: index + 1,
+    occurredAt: event.occurredAt,
+    reason: event.reason ?? null,
+    metadata: event.metadata ? toJsonInput(event.metadata) : undefined,
+  };
+}
+
+function toJsonInput(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}

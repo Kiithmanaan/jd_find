@@ -1,0 +1,3 @@
+fingerprint,name,title,city,educationLevel,yearsOfExperience,industries,keywords,summary,intent,activityLevel,platform,sourceUrl,searchContext,fallbackClues
+csv-a,候选人CSV A,解决方案顾问,上海,本科,8,企业服务;SaaS,解决方案;客户成功,"负责复杂项目推动，具备客户理解能力",高,中,CSVPlatform,https://example.test/csv-a,关键词：解决方案;城市：上海,候选人CSV A;企业服务
+csv-b,候选人CSV B,客户成功经理,上海,本科,6,企业服务,客户成功,"有客户理解能力，复杂项目推动经验需人工确认",低,高,CSVPlatform,,关键词：客户成功;城市：上海,候选人CSV B;客户成功经理

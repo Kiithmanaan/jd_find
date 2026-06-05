@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobProfileStatus {
+  Draft
+  Suggested
+  Confirmed
+  Archived
+}
+
+enum SearchRunStatus {
+  Created
+  Running
+  Acquired
+  Deduplicated
+  HardFiltered
+  Assessed
+  Completed
+  Interrupted
+  Failed
+  Cancelled
+}
+
+enum CandidateResultStatus {
+  Acquired
+  Deduplicated
+  HardPassed
+  HardRejected
+  Assessed
+  Displayable
+}
+
+model JobProfileRecord {
+  id                String           @id
+  title             String
+  jdText            String
+  status            JobProfileStatus
+  searchCondition   Json
+  hardRequirements  Json
+  softRequirements  Json
+  confirmedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  searchRuns        SearchRunRecord[]
+
+  @@index([status])
+}
+
+model SearchRunRecord {
+  id                 String                  @id
+  jobProfileId       String
+  status             SearchRunStatus
+  targetResultCount  Int
+  interruptedReason  String?
+  failureReason      String?
+  events             SearchEventRecord[]
+  candidates         CandidateResultRecord[]
+  aiAssessmentAudits AIAssessmentAuditRecord[]
+  createdAt          DateTime
+  updatedAt          DateTime
+  jobProfile         JobProfileRecord        @relation(fields: [jobProfileId], references: [id])
+
+  @@index([jobProfileId])
+  @@index([status])
+}
+
+model AIAssessmentAuditRecord {
+  id             String          @id
+  searchRunId    String
+  jobProfileId   String
+  provider       String
+  model          String
+  candidateIds   Json
+  inputSnapshot  Json
+  outputSnapshot Json
+  createdAt      DateTime
+  searchRun      SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([searchRunId])
+  @@index([jobProfileId])
+  @@index([provider, model])
+}
+
+model CandidateResultRecord {
+  id                String                @id
+  fingerprint       String
+  jobProfileId      String
+  searchRunId       String
+  status            CandidateResultStatus
+  resume            Json
+  intent            String
+  activityLevel     String
+  sourceLead        Json
+  hardRejectReasons Json
+  matchAssessment   Json?
+  searchRun         SearchRunRecord       @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([jobProfileId])
+  @@index([searchRunId])
+  @@unique([searchRunId, fingerprint])
+}
+
+model SearchEventRecord {
+  id          String          @id @default(cuid())
+  searchRunId String
+  type        String
+  sequence    Int
+  occurredAt  DateTime
+  reason      String?
+  metadata    Json?
+  searchRun   SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([searchRunId])
+  @@index([type])
+  @@unique([searchRunId, sequence])
+}
