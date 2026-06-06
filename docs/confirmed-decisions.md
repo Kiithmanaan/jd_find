@@ -322,5 +322,5 @@ Trace：
 - 当前已引入硬性条件配置表和读取 API，硬筛执行器尚未改为配置驱动的淘汰/合格规则组。
 - 当前已具备用户、Web JWT 和 Plugin Token 基础；尚未支持 token 刷新、修改密码和忘记密码。
 - 当前尚无附件模型和本地文件存储。
-- 当前尚无 React/Vite 前端。
-- 当前尚无 CI、OpenAPI、demo 脚本和验收清单。
+- 当前已具备 React/Vite 运维工作台基础；尚未实现完整产品级前端。
+- 当前已具备 GitHub Actions CI；尚无 OpenAPI、demo 脚本和验收清单。

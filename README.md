@@ -29,12 +29,14 @@
 - AI Assessment 审计：记录评估输入快照、输出快照、provider 和 model。
 - HTTP AI Assessment Adapter：通过通用 HTTP endpoint 接入外部 AI 评估服务。
 - 插件 ingestion API：插件 SearchRun 创建、插件候选人批量提交、按创建用户限制提交范围。
+- GitHub Actions CI：push / pull request 时执行依赖安装、Prisma generate/validate、后端类型检查、前端类型检查、测试和前端构建。
+- React/Vite 运维工作台：Web/插件登录、插件 SearchRun 创建、候选人批次提交、SearchRun 查询、AI 审计查询。
 
 未实现：
 
 - 真实招聘平台接入。
 - 真实 AI 模型接入。
-- 前端界面。
+- 完整产品级前端界面。
 - 浏览器插件本体。
 - 简历附件上传和下载。
 - ATS、长期人才库、自动沟通。
@@ -115,6 +117,28 @@ npm start
 
 ```text
 http://127.0.0.1:3000
+```
+
+## 运行前端
+
+开发模式：
+
+```bash
+npm run web:dev
+```
+
+默认监听：
+
+```text
+http://127.0.0.1:5173
+```
+
+前端开发服务会把 `/api` 代理到 `http://127.0.0.1:3000`。
+
+生产构建：
+
+```bash
+npm run web:build
 ```
 
 健康检查：
