@@ -5,6 +5,7 @@ import type {
   JobProfileRepository,
   JobProfileVersionRepository,
   SearchRunRepository,
+  UserRepository,
 } from "../../application/ports.js";
 import type {
   AIAssessmentAuditRecord,
@@ -13,7 +14,34 @@ import type {
   JobProfile,
   JobProfileVersion,
   SearchRun,
+  User,
 } from "../../domain/types.js";
+
+export class InMemoryUserRepository implements UserRepository {
+  private readonly records = new Map<string, User>();
+
+  constructor(users: User[]) {
+    for (const user of users) {
+      this.records.set(user.id, structuredClone(user));
+    }
+  }
+
+  async save(user: User): Promise<User> {
+    this.records.set(user.id, structuredClone(user));
+    return structuredClone(user);
+  }
+
+  async findById(id: string): Promise<User | undefined> {
+    const record = this.records.get(id);
+    return record ? structuredClone(record) : undefined;
+  }
+
+  async findByEmail(email: string): Promise<User | undefined> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const record = [...this.records.values()].find((user) => user.email === normalizedEmail);
+    return record ? structuredClone(record) : undefined;
+  }
+}
 
 export class InMemoryJobProfileRepository implements JobProfileRepository {
   private readonly records = new Map<string, JobProfile>();

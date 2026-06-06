@@ -77,7 +77,12 @@ test("MockSourceAdapter 通过来源协议规范化候选人草稿", async () =>
     ],
   });
   const jobProfile = createConfirmedJobProfile();
-  const searchRun = startSearchRun(createSearchRun(jobProfile, "source-contract-run"));
+  const searchRun = startSearchRun(
+    createSearchRun(jobProfile, "source-contract-run", {
+      targetResultCount: undefined,
+      ownerId: undefined,
+    }),
+  );
 
   const result = await adapter.acquireCandidates(jobProfile, searchRun);
 

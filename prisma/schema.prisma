@@ -28,6 +28,7 @@ enum SearchRunStatus {
 }
 
 enum CandidateResultStatus {
+  Pending
   Acquired
   Deduplicated
   HardPassed
@@ -36,8 +37,19 @@ enum CandidateResultStatus {
   Displayable
 }
 
+model UserRecord {
+  id                 String   @id
+  email              String   @unique
+  passwordHash       String
+  pluginTokenVersion Int      @default(1)
+  createdAt          DateTime @default(now())
+
+  @@index([email])
+}
+
 model JobProfileRecord {
   id                String           @id
+  createdByUserId   String?
   title             String
   jdText            String
   status            JobProfileStatus
@@ -78,8 +90,10 @@ model SearchRunRecord {
   id                 String                  @id
   jobProfileId       String
   jobProfileVersionId String?
+  ownerId            String?
   status             SearchRunStatus
   targetResultCount  Int
+  rawSubmittedCount  Int                     @default(0)
   interruptedReason  String?
   failureReason      String?
   events             SearchEventRecord[]

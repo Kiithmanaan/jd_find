@@ -62,7 +62,12 @@ test("HttpAIAssessment posts job profile and candidates to endpoint", async () =
   };
 
   const jobProfile = createConfirmedJobProfile();
-  let searchRun = startSearchRun(createSearchRun(jobProfile, "http-run"));
+  let searchRun = startSearchRun(
+    createSearchRun(jobProfile, "http-run", {
+      targetResultCount: undefined,
+      ownerId: undefined,
+    }),
+  );
   searchRun = acquireCandidateResults(searchRun, jobProfile, createCandidateDrafts().slice(0, 1));
   searchRun = deduplicateWithinSearchRun(searchRun);
   searchRun = applyHardFilter(searchRun, jobProfile);
@@ -100,7 +105,12 @@ test("HttpAIAssessment turns non-2xx responses into DomainError", async () => {
 
 function createHardPassedCandidates() {
   const jobProfile = createConfirmedJobProfile();
-  let searchRun = startSearchRun(createSearchRun(jobProfile, "http-error-run"));
+  let searchRun = startSearchRun(
+    createSearchRun(jobProfile, "http-error-run", {
+      targetResultCount: undefined,
+      ownerId: undefined,
+    }),
+  );
   searchRun = acquireCandidateResults(searchRun, jobProfile, createCandidateDrafts().slice(0, 1));
   searchRun = deduplicateWithinSearchRun(searchRun);
   searchRun = applyHardFilter(searchRun, jobProfile);

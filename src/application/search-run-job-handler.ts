@@ -54,5 +54,7 @@ function createSourceAdapterForJob(job: OneTimeSearchJob): SourceAdapter {
       return new CsvSourceAdapter({
         filePath: job.source.csvFilePath,
       });
+    case "plugin":
+      throw new Error("Plugin search runs are processed through ingestion APIs.");
   }
 }

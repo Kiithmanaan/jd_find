@@ -56,7 +56,12 @@ test("AI 匹配评估拒绝最终决策措辞", () => {
 
 test("AI 匹配评估必须覆盖请求范围内所有候选人且不能越界", () => {
   const jobProfile = createConfirmedJobProfile();
-  let searchRun = startSearchRun(createSearchRun(jobProfile, "ai-contract-run"));
+  let searchRun = startSearchRun(
+    createSearchRun(jobProfile, "ai-contract-run", {
+      targetResultCount: undefined,
+      ownerId: undefined,
+    }),
+  );
   searchRun = acquireCandidateResults(searchRun, jobProfile, createCandidateDrafts().slice(0, 2));
   searchRun = deduplicateWithinSearchRun(searchRun);
   searchRun = applyHardFilter(searchRun, jobProfile);

@@ -48,7 +48,10 @@ test("PrismaJobProfileRepository 使用 upsert 保存并还原领域对象", asy
 
 test("PrismaSearchRunRepository 使用 upsert 保存 SearchRun 聚合", async () => {
   const jobProfile = createConfirmedJobProfile();
-  let searchRun = createSearchRun(jobProfile, "prisma-run-1");
+  let searchRun = createSearchRun(jobProfile, "prisma-run-1", {
+    targetResultCount: undefined,
+    ownerId: undefined,
+  });
   searchRun = startSearchRun(searchRun);
   searchRun = acquireCandidateResults(searchRun, jobProfile, createCandidateDrafts().slice(0, 1));
 

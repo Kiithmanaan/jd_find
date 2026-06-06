@@ -3,11 +3,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createApp } from "../src/api/app.js";
+import { hashPassword } from "../src/application/auth.js";
 import { SearchRunJobHandler } from "../src/application/search-run-job-handler.js";
+import type { User } from "../src/domain/types.js";
 import { InMemorySearchRunQueue } from "../src/infrastructure/memory/in-memory-search-run-queue.js";
 import {
   InMemoryAIAssessmentAuditSink,
+  InMemoryJobProfileRepository,
   InMemorySearchRunRepository,
+  InMemoryUserRepository,
 } from "../src/infrastructure/memory/in-memory-repositories.js";
 import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.js";
 import { createCandidateDrafts, createConfirmedJobProfile, createDraftJobProfile } from "./fixtures.js";
@@ -198,6 +202,226 @@ test("API 支持 CSV 来源入队并由 worker 从文件完成寻访", async () 
   assert.equal(body.candidates.length, 2);
 });
 
+test("认证开启后 Web 登录可创建插件 SearchRun", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-1",
+    users,
+    searchRuns,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const unauthorized = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(unauthorized.statusCode, 401);
+
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "hunter@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(login.statusCode, 200);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${login.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+
+  assert.equal(response.statusCode, 202);
+  assert.equal(response.json().searchRunId, "plugin-run-1");
+
+  const saved = await searchRuns.findById("plugin-run-1");
+  assert.equal(saved?.status, "Running");
+  assert.equal(saved?.ownerId, "user-1");
+  assert.equal(saved?.targetResultCount, 10);
+  assert.equal(saved?.rawSubmittedCount, 0);
+});
+
+test("插件登录后可向自己的 SearchRun 增量提交候选人并叠加结果", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-submit",
+    users,
+    searchRuns,
+    jobProfiles,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const webLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "hunter@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(webLogin.statusCode, 200);
+
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${webLogin.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const pluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: {
+      email: "hunter@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(pluginLogin.statusCode, 200);
+
+  const firstSubmit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-submit/candidates",
+    headers: {
+      authorization: `Bearer ${pluginLogin.json().token}`,
+    },
+    payload: {
+      batchId: "batch-1",
+      sourcePlatform: "MockPlatform",
+      candidates: createCandidateDrafts().slice(0, 1),
+    },
+  });
+  assert.equal(firstSubmit.statusCode, 202);
+  assert.equal(firstSubmit.json().rawSubmittedCount, 1);
+  assert.equal(firstSubmit.json().candidateCount, 1);
+
+  const secondSubmit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-submit/candidates",
+    headers: {
+      authorization: `Bearer ${pluginLogin.json().token}`,
+    },
+    payload: {
+      batchId: "batch-2",
+      sourcePlatform: "MockPlatform",
+      candidates: createCandidateDrafts().slice(1, 2),
+    },
+  });
+
+  assert.equal(secondSubmit.statusCode, 202);
+  assert.equal(secondSubmit.json().rawSubmittedCount, 2);
+  assert.equal(secondSubmit.json().candidateCount, 2);
+
+  const saved = await searchRuns.findById("plugin-run-submit");
+  assert.equal(saved?.status, "Assessed");
+  assert.equal(saved?.rawSubmittedCount, 2);
+  assert.deepEqual(
+    saved?.candidates.map((candidate) => candidate.fingerprint),
+    ["candidate-a", "candidate-b"],
+  );
+});
+
+test("插件不能向其他用户创建的 SearchRun 提交候选人", async () => {
+  const users = new InMemoryUserRepository([
+    createUser("user-1", "owner@example.test", "secret"),
+    createUser("user-2", "other@example.test", "secret"),
+  ]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-owner",
+    users,
+    searchRuns,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const ownerLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "owner@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(ownerLogin.statusCode, 200);
+
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${ownerLogin.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const otherPluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: {
+      email: "other@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(otherPluginLogin.statusCode, 200);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-owner/candidates",
+    headers: {
+      authorization: `Bearer ${otherPluginLogin.json().token}`,
+    },
+    payload: {
+      batchId: "batch-other",
+      candidates: createCandidateDrafts().slice(0, 1),
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.json().error, "AuthError");
+});
+
 test("API 查询不存在的 SearchRun 返回 404", async () => {
   const app = createApp();
   const response = await app.inject({
@@ -284,3 +508,13 @@ test("API 拒绝非法 SourceLead URL", async () => {
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().error, "ValidationError");
 });
+
+function createUser(id: string, email: string, password: string): User {
+  return {
+    id,
+    email,
+    passwordHash: hashPassword(password, undefined),
+    pluginTokenVersion: 1,
+    createdAt: new Date("2026-06-06T00:00:00.000Z"),
+  };
+}

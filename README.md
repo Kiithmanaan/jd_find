@@ -10,10 +10,11 @@
 
 - TypeScript + Fastify 项目骨架。
 - 领域模型：`JobProfile`、`SearchRun`、`CandidateResult`、`MatchAssessment`、`SourceLead`。
-- 业务规则：画像确认、单次 200 目标、当前任务内去重、硬筛优先、软性匹配、匹配分排序。
+- 业务规则：画像确认、插件寻访目标数量配置、当前任务内去重、硬筛优先、软性匹配、匹配分排序。
 - AI 边界：只做 Mock 条件下的匹配评估和解释，不自动沟通、不最终推荐。
 - 风控边界：风险触发后 `SearchRun` 中止，不继续补齐候选人结果。
 - 失败边界：外部来源或 AI 评估异常会保存 `Failed` 快照和失败原因，便于 API 查询和 Worker 排障。
+- 用户认证：Web 登录 JWT、Plugin Token、Prisma 用户仓库、用户创建脚本。
 - Repository 端口和内存实现。
 - BullMQ 队列适配器边界。
 - Prisma Repository 实现。
@@ -27,12 +28,15 @@
 - AI Assessment 契约：匹配分规范化、解释必填、禁止最终决策措辞。
 - AI Assessment 审计：记录评估输入快照、输出快照、provider 和 model。
 - HTTP AI Assessment Adapter：通过通用 HTTP endpoint 接入外部 AI 评估服务。
+- 插件 ingestion API：插件 SearchRun 创建、插件候选人批量提交、按创建用户限制提交范围。
 
 未实现：
 
 - 真实招聘平台接入。
 - 真实 AI 模型接入。
 - 前端界面。
+- 浏览器插件本体。
+- 简历附件上传和下载。
 - ATS、长期人才库、自动沟通。
 
 ## 安装
@@ -96,6 +100,7 @@ npm run prisma:deploy
 - `prisma/migrations/20260604170000_search_run_failure_reason/migration.sql`
 - `prisma/migrations/20260606110000_job_profile_versions/migration.sql`
 - `prisma/migrations/20260606112000_hard_condition_config/migration.sql`
+- `prisma/migrations/20260606130000_users_and_incremental_search/migration.sql`
 
 ## 运行 API
 
@@ -122,6 +127,27 @@ curl http://127.0.0.1:3000/api/health
 
 ```text
 GET /api/hard-condition-config
+```
+
+创建初始用户：
+
+```bash
+npm run build
+USER_EMAIL=hunter@example.com USER_PASSWORD='change-me' npm run user:create
+```
+
+Web 登录：
+
+```text
+POST /api/auth/login
+→ { token, tokenType: "Bearer", expiresIn }
+```
+
+插件登录：
+
+```text
+POST /api/plugin/auth/login
+→ { token, tokenType: "Bearer", expiresIn }
 ```
 
 一次性寻访启动接口采用异步语义：
@@ -152,6 +178,30 @@ CSV 来源请求体：
   "jobProfile": {},
   "sourceType": "csv",
   "csvFilePath": "/absolute/path/to/candidates.csv"
+}
+```
+
+插件来源请求体需要 Web Bearer Token：
+
+```json
+{
+  "jobProfile": {},
+  "sourceType": "plugin",
+  "targetResultCount": 200
+}
+```
+
+插件提交候选人需要 Plugin Bearer Token：
+
+```text
+POST /api/plugin/search-runs/:id/candidates
+```
+
+```json
+{
+  "batchId": "batch-1",
+  "sourcePlatform": "Boss",
+  "candidates": []
 }
 ```
 

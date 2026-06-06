@@ -9,6 +9,7 @@ import type {
   MatchAssessment,
   RiskSignal,
   SearchRun,
+  User,
 } from "../domain/types.js";
 
 export interface SourceAdapter {
@@ -39,6 +40,12 @@ export interface AIAssessmentAuditRepository extends AIAssessmentAuditSink {
 export interface JobProfileRepository {
   save(jobProfile: JobProfile): Promise<JobProfile>;
   findById(id: string): Promise<JobProfile | undefined>;
+}
+
+export interface UserRepository {
+  save(user: User): Promise<User>;
+  findById(id: string): Promise<User | undefined>;
+  findByEmail(email: string): Promise<User | undefined>;
 }
 
 export interface JobProfileVersionRepository {
@@ -73,6 +80,9 @@ export type OneTimeSearchSource =
   | {
       type: "csv";
       csvFilePath: string;
+    }
+  | {
+      type: "plugin";
     };
 
 export interface SearchRunQueue {

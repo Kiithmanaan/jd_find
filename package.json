@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "start": "node dist/src/api/server.js",
+    "user:create": "node dist/src/scripts/create-user.js",
     "worker:search": "node dist/src/workers/search-run-worker.js",
     "test": "npm run build && node --test dist/tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"

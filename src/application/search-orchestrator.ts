@@ -45,7 +45,10 @@ export class SearchOrchestrator {
       await this.dependencies.jobProfileVersions.save(createConfirmedJobProfileVersion(runnableJobProfile));
     }
 
-    let searchRun = createSearchRun(runnableJobProfile, this.dependencies.idGenerator());
+    let searchRun = createSearchRun(runnableJobProfile, this.dependencies.idGenerator(), {
+      targetResultCount: undefined,
+      ownerId: undefined,
+    });
     searchRun = startSearchRun(searchRun);
     searchRun = await this.saveSearchRun(searchRun);
 

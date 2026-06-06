@@ -4,6 +4,7 @@ import type {
   JobProfileRepository,
   JobProfileVersionRepository,
   SearchRunRepository,
+  UserRepository,
 } from "../../application/ports.js";
 import type {
   HardConditionDimension,
@@ -11,8 +12,12 @@ import type {
   JobProfile,
   JobProfileVersion,
   SearchRun,
+  User,
 } from "../../domain/types.js";
 import {
+  toUserCreateInput,
+  toUserDomain,
+  toUserUpdateInput,
   toJobProfileCreateInput,
   toJobProfileDomain,
   toJobProfileUpdateInput,
@@ -22,6 +27,7 @@ import {
   toSearchRunCreateInput,
   toSearchRunDomain,
   toSearchRunUpdateInput,
+  type UserPersistenceRecord,
   type JobProfilePersistenceRecord,
   type JobProfileVersionPersistenceRecord,
   type SearchRunPersistenceRecord,
@@ -29,13 +35,43 @@ import {
 
 export type PrismaLikeClient = Pick<
   PrismaClient,
-  "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord"
+  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord"
 >;
 
 const searchRunInclude = {
   candidates: true,
   events: true,
 } as const;
+
+export class PrismaUserRepository implements UserRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async save(user: User): Promise<User> {
+    const record = await this.prisma.userRecord.upsert({
+      where: { id: user.id },
+      create: toUserCreateInput(user),
+      update: toUserUpdateInput(user),
+    });
+
+    return toUserDomain(record as UserPersistenceRecord);
+  }
+
+  async findById(id: string): Promise<User | undefined> {
+    const record = await this.prisma.userRecord.findUnique({
+      where: { id },
+    });
+
+    return record ? toUserDomain(record as UserPersistenceRecord) : undefined;
+  }
+
+  async findByEmail(email: string): Promise<User | undefined> {
+    const record = await this.prisma.userRecord.findUnique({
+      where: { email: email.trim().toLowerCase() },
+    });
+
+    return record ? toUserDomain(record as UserPersistenceRecord) : undefined;
+  }
+}
 
 export class PrismaJobProfileRepository implements JobProfileRepository {
   constructor(private readonly prisma: PrismaLikeClient) {}

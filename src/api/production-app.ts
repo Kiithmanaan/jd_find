@@ -6,6 +6,7 @@ import {
   PrismaJobProfileRepository,
   PrismaJobProfileVersionRepository,
   PrismaSearchRunRepository,
+  PrismaUserRepository,
 } from "../infrastructure/prisma/prisma-repositories.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
 import { createApp } from "./app.js";
@@ -18,6 +19,7 @@ export interface CreateProductionAppOptions {
 
 export function createProductionApp(options: CreateProductionAppOptions = {}): FastifyInstance {
   const prisma = createPrismaClient();
+  const jwtSecret = readRequiredEnv("JWT_SECRET");
   const searchRunQueue = new BullMqSearchRunQueue({
     queueName: options.queueName ?? process.env.SEARCH_RUN_QUEUE_NAME ?? "search-runs",
     connection: {
@@ -34,6 +36,11 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     searchRuns: new PrismaSearchRunRepository(prisma),
     aiAssessmentAudits: new PrismaAIAssessmentAuditSink(prisma),
     searchRunQueue,
+    users: new PrismaUserRepository(prisma),
+    auth: {
+      enabled: true,
+      jwtSecret,
+    },
   });
 
   app.addHook("onClose", async () => {
@@ -42,4 +49,13 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
   });
 
   return app;
+}
+
+function readRequiredEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+
+  return value;
 }

@@ -15,6 +15,7 @@ export type SearchRunStatus =
   | "Cancelled";
 
 export type CandidateResultStatus =
+  | "Pending"
   | "Acquired"
   | "Deduplicated"
   | "HardPassed"
@@ -89,6 +90,7 @@ export interface SoftRequirement {
 
 export interface JobProfile {
   id: Identifier;
+  createdByUserId?: Identifier;
   title: string;
   jdText: string;
   status: JobProfileStatus;
@@ -184,14 +186,24 @@ export interface SearchRun {
   id: Identifier;
   jobProfileId: Identifier;
   jobProfileVersionId: Identifier;
+  ownerId?: Identifier;
   status: SearchRunStatus;
   targetResultCount: number;
+  rawSubmittedCount: number;
   candidates: CandidateResult[];
   events: SearchEvent[];
   createdAt: Date;
   updatedAt: Date;
   interruptedReason?: string;
   failureReason?: string;
+}
+
+export interface User {
+  id: Identifier;
+  email: string;
+  passwordHash: string;
+  pluginTokenVersion: number;
+  createdAt: Date;
 }
 
 export interface CandidateDraft {

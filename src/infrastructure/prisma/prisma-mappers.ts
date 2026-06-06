@@ -5,10 +5,20 @@ import type {
   JobProfileVersion,
   SearchEvent,
   SearchRun,
+  User,
 } from "../../domain/types.js";
+
+export type UserPersistenceRecord = {
+  id: string;
+  email: string;
+  passwordHash: string;
+  pluginTokenVersion: number;
+  createdAt: Date;
+};
 
 export type JobProfilePersistenceRecord = {
   id: string;
+  createdByUserId: string | null;
   title: string;
   jdText: string;
   status: JobProfile["status"];
@@ -37,8 +47,10 @@ export type SearchRunPersistenceRecord = {
   id: string;
   jobProfileId: string;
   jobProfileVersionId: string;
+  ownerId: string | null;
   status: SearchRun["status"];
   targetResultCount: number;
+  rawSubmittedCount: number;
   interruptedReason: string | null;
   failureReason: string | null;
   createdAt: Date;
@@ -69,9 +81,39 @@ export type SearchEventPersistenceRecord = {
   metadata: Prisma.JsonValue | null;
 };
 
+export function toUserCreateInput(user: User): Prisma.UserRecordCreateInput {
+  return {
+    id: user.id,
+    email: user.email,
+    passwordHash: user.passwordHash,
+    pluginTokenVersion: user.pluginTokenVersion,
+    createdAt: user.createdAt,
+  };
+}
+
+export function toUserUpdateInput(user: User): Prisma.UserRecordUpdateInput {
+  return {
+    email: user.email,
+    passwordHash: user.passwordHash,
+    pluginTokenVersion: user.pluginTokenVersion,
+    createdAt: user.createdAt,
+  };
+}
+
+export function toUserDomain(record: UserPersistenceRecord): User {
+  return {
+    id: record.id,
+    email: record.email,
+    passwordHash: record.passwordHash,
+    pluginTokenVersion: record.pluginTokenVersion,
+    createdAt: record.createdAt,
+  };
+}
+
 export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfileRecordCreateInput {
   return {
     id: jobProfile.id,
+    createdByUserId: jobProfile.createdByUserId ?? null,
     title: jobProfile.title,
     jdText: jobProfile.jdText,
     status: jobProfile.status,
@@ -86,6 +128,7 @@ export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfi
 export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfileRecordUpdateInput {
   return {
     title: jobProfile.title,
+    createdByUserId: jobProfile.createdByUserId ?? null,
     jdText: jobProfile.jdText,
     status: jobProfile.status,
     currentVersionId: jobProfile.currentVersionId ?? null,
@@ -99,6 +142,7 @@ export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfi
 export function toJobProfileDomain(record: JobProfilePersistenceRecord): JobProfile {
   return {
     id: record.id,
+    createdByUserId: record.createdByUserId ?? undefined,
     title: record.title,
     jdText: record.jdText,
     status: record.status,
@@ -169,8 +213,10 @@ export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun
     id: record.id,
     jobProfileId: record.jobProfileId,
     jobProfileVersionId: record.jobProfileVersionId,
+    ownerId: record.ownerId ?? undefined,
     status: record.status,
     targetResultCount: record.targetResultCount,
+    rawSubmittedCount: record.rawSubmittedCount,
     interruptedReason: record.interruptedReason ?? undefined,
     failureReason: record.failureReason ?? undefined,
     createdAt: record.createdAt,
@@ -185,6 +231,7 @@ export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun
 export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRecordCreateInput {
   return {
     id: searchRun.id,
+    ownerId: searchRun.ownerId ?? null,
     jobProfile: {
       connect: {
         id: searchRun.jobProfileId,
@@ -197,6 +244,7 @@ export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRe
     },
     status: searchRun.status,
     targetResultCount: searchRun.targetResultCount,
+    rawSubmittedCount: searchRun.rawSubmittedCount,
     interruptedReason: searchRun.interruptedReason ?? null,
     failureReason: searchRun.failureReason ?? null,
     createdAt: searchRun.createdAt,
@@ -213,12 +261,14 @@ export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRe
 export function toSearchRunUpdateInput(searchRun: SearchRun): Prisma.SearchRunRecordUpdateInput {
   return {
     status: searchRun.status,
+    ownerId: searchRun.ownerId ?? null,
     jobProfileVersion: {
       connect: {
         id: searchRun.jobProfileVersionId,
       },
     },
     targetResultCount: searchRun.targetResultCount,
+    rawSubmittedCount: searchRun.rawSubmittedCount,
     interruptedReason: searchRun.interruptedReason ?? null,
     failureReason: searchRun.failureReason ?? null,
     createdAt: searchRun.createdAt,

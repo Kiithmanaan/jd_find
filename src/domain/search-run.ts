@@ -12,7 +12,12 @@ import type {
 
 export const MVP_SINGLE_SEARCH_LIMIT = 200;
 
-export function createSearchRun(jobProfile: JobProfile, id: string): SearchRun {
+export interface CreateSearchRunOptions {
+  targetResultCount: number | undefined;
+  ownerId: string | undefined;
+}
+
+export function createSearchRun(jobProfile: JobProfile, id: string, options: CreateSearchRunOptions): SearchRun {
   assertJobProfileConfirmed(jobProfile);
 
   const now = new Date();
@@ -21,8 +26,10 @@ export function createSearchRun(jobProfile: JobProfile, id: string): SearchRun {
     id,
     jobProfileId: jobProfile.id,
     jobProfileVersionId: jobProfile.currentVersionId ?? createDefaultJobProfileVersionId(jobProfile.id),
+    ownerId: options.ownerId,
     status: "Created",
-    targetResultCount: MVP_SINGLE_SEARCH_LIMIT,
+    targetResultCount: options.targetResultCount ?? MVP_SINGLE_SEARCH_LIMIT,
+    rawSubmittedCount: 0,
     candidates: [],
     events: [],
     createdAt: now,
@@ -46,10 +53,11 @@ export function acquireCandidateResults(
   jobProfile: JobProfile,
   drafts: CandidateDraft[],
 ): SearchRun {
-  const limitedDrafts = drafts.slice(0, searchRun.targetResultCount);
+  const remainingCapacity = Math.max(searchRun.targetResultCount - searchRun.rawSubmittedCount, 0);
+  const limitedDrafts = drafts.slice(0, remainingCapacity);
   const candidates = limitedDrafts.map((draft, index): CandidateResult => {
     return {
-      id: `${searchRun.id}-candidate-${index + 1}`,
+      id: `${searchRun.id}-candidate-${searchRun.rawSubmittedCount + index + 1}`,
       fingerprint: draft.fingerprint,
       jobProfileId: jobProfile.id,
       searchRunId: searchRun.id,
@@ -66,12 +74,25 @@ export function acquireCandidateResults(
     {
       ...searchRun,
       status: "Acquired",
-      candidates,
+      candidates: [...searchRun.candidates, ...candidates],
       updatedAt: new Date(),
+      rawSubmittedCount: searchRun.rawSubmittedCount + limitedDrafts.length,
     },
     "CandidateResultsAcquired",
     undefined,
     { count: candidates.length },
+  );
+}
+
+export function cancelSearchRun(searchRun: SearchRun, reason: string): SearchRun {
+  return appendEvent(
+    {
+      ...searchRun,
+      status: "Cancelled",
+      updatedAt: new Date(),
+    },
+    "SearchInterrupted",
+    reason,
   );
 }
 

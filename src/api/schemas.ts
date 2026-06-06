@@ -56,6 +56,7 @@ const softRequirementSchema = z.object({
 
 const jobProfileSchema = z.object({
   id: nonEmptyString,
+  createdByUserId: nonEmptyString.optional(),
   title: nonEmptyString,
   jdText: nonEmptyString,
   status: z.enum(["Draft", "Suggested", "Confirmed", "Archived"]),
@@ -98,9 +99,15 @@ const riskSignalSchema = z.object({
   reason: nonEmptyString,
 });
 
+export const loginRequestSchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  password: z.string().min(1),
+});
+
 const mockOneTimeSearchRequestSchema = z.object({
   jobProfile: jobProfileSchema,
   sourceType: z.literal("mock").optional(),
+  targetResultCount: z.number().int().min(10).max(500).optional(),
   candidates: z.array(candidateDraftSchema),
   riskSignal: riskSignalSchema.optional(),
 });
@@ -108,7 +115,14 @@ const mockOneTimeSearchRequestSchema = z.object({
 const csvOneTimeSearchRequestSchema = z.object({
   jobProfile: jobProfileSchema,
   sourceType: z.literal("csv"),
+  targetResultCount: z.number().int().min(10).max(500).optional(),
   csvFilePath: nonEmptyString,
+});
+
+const pluginOneTimeSearchRequestSchema = z.object({
+  jobProfile: jobProfileSchema,
+  sourceType: z.literal("plugin"),
+  targetResultCount: z.number().int().min(10).max(500).default(200),
 });
 
 export const oneTimeSearchRequestSchema = z.discriminatedUnion("sourceType", [
@@ -116,9 +130,16 @@ export const oneTimeSearchRequestSchema = z.discriminatedUnion("sourceType", [
     sourceType: z.literal("mock"),
   }),
   csvOneTimeSearchRequestSchema,
+  pluginOneTimeSearchRequestSchema,
 ]).or(mockOneTimeSearchRequestSchema);
 
 export type OneTimeSearchRequestBody = z.infer<typeof oneTimeSearchRequestSchema>;
+
+export const pluginCandidateSubmissionSchema = z.object({
+  batchId: nonEmptyString.optional(),
+  sourcePlatform: nonEmptyString.optional(),
+  candidates: z.array(candidateDraftSchema).min(1),
+});
 
 export function formatZodError(error: z.ZodError): Array<{ path: string; message: string }> {
   return error.issues.map((issue) => ({
