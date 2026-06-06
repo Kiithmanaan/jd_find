@@ -188,6 +188,8 @@ npm run worker:search
 
 - `docs/engineering-architecture.md`：工程化落地架构确认稿。
 - `docs/pre-implementation-decisions.md`：代码实现前确认清单。
+- `docs/confirmed-decisions.md`：当前已确认的产品与工程决策。
+- `docs/non-code-todo.md`：非代码类 TODO 清单。
 
 ## Source Adapter 契约
 
