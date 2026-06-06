@@ -311,15 +311,15 @@ Trace：
 
 以下是当前代码骨架与最新确认决策之间的主要差异，后续实现需要调整：
 
-- 当前 API 尚未加 `/api` 前缀。
+- 当前 API 已加 `/api` 前缀。
 - 当前仍是批处理 Mock/CSV SearchRun 模型，尚未支持插件增量 ingestion。
 - 当前单次目标数量固定为 200，尚未支持用户配置 10-500。
 - 当前去重范围主要在单次 SearchRun 内，尚未实现同一 JobProfile 跨 SearchRun 去重。
-- 当前 `JobProfile` 尚无版本模型。
+- 当前已引入 `JobProfileVersion` 基础模型，尚未实现草稿版本编辑、历史版本展示和批量重新评估。
 - 当前 `MatchAssessment` 尚未包含推荐结论、不合适点、完整 trace、prompt/agent version。
 - 当前 AI 契约仍禁止最终推荐措辞，需要按最新决策移除。
 - 当前 AI 审计尚未记录 prompt、duration、失败调用信息。
-- 当前硬性条件还是固定领域结构，尚未改为配置表 + 淘汰/合格规则组。
+- 当前已引入硬性条件配置表和读取 API，硬筛执行器尚未改为配置驱动的淘汰/合格规则组。
 - 当前尚无用户、登录、JWT、Plugin Token。
 - 当前尚无附件模型和本地文件存储。
 - 当前尚无 React/Vite 前端。

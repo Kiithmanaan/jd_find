@@ -24,6 +24,7 @@ test("PrismaJobProfileRepository 使用 upsert 保存并还原领域对象", asy
           title: jobProfile.title,
           jdText: jobProfile.jdText,
           status: jobProfile.status,
+          currentVersionId: jobProfile.currentVersionId ?? null,
           searchCondition: jobProfile.searchCondition,
           hardRequirements: jobProfile.hardRequirements,
           softRequirements: jobProfile.softRequirements,
@@ -57,15 +58,28 @@ test("PrismaSearchRunRepository 使用 upsert 保存 SearchRun 聚合", async ()
       upsert: async () => null,
       findUnique: async () => null,
     },
+    jobProfileVersionRecord: {
+      upsert: async () => null,
+      findUnique: async () => null,
+      findFirst: async () => null,
+    },
+    hardConditionDimensionRecord: {
+      findMany: async () => [],
+    },
+    hardConditionOptionRecord: {
+      findMany: async () => [],
+    },
     searchRunRecord: {
       upsert: async (args: unknown) => {
         capturedArgs = args;
         return {
           id: searchRun.id,
           jobProfileId: searchRun.jobProfileId,
+          jobProfileVersionId: searchRun.jobProfileVersionId,
           status: searchRun.status,
           targetResultCount: searchRun.targetResultCount,
           interruptedReason: null,
+          failureReason: null,
           createdAt: searchRun.createdAt,
           updatedAt: searchRun.updatedAt,
           candidates: searchRun.candidates.map((candidate) => ({

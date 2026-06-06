@@ -1,5 +1,5 @@
 import { DomainError } from "./errors.js";
-import type { JobProfile } from "./types.js";
+import type { JobProfile, JobProfileVersion } from "./types.js";
 
 export function confirmJobProfile(jobProfile: JobProfile): JobProfile {
   if (jobProfile.status === "Archived") {
@@ -21,6 +21,7 @@ export function confirmJobProfile(jobProfile: JobProfile): JobProfile {
   return {
     ...jobProfile,
     status: "Confirmed",
+    currentVersionId: jobProfile.currentVersionId ?? createDefaultJobProfileVersionId(jobProfile.id),
     confirmedAt: new Date(),
   };
 }
@@ -29,4 +30,26 @@ export function assertJobProfileConfirmed(jobProfile: JobProfile): void {
   if (jobProfile.status !== "Confirmed") {
     throw new DomainError("Job profile must be confirmed before starting a search run.");
   }
+}
+
+export function createDefaultJobProfileVersionId(jobProfileId: string): string {
+  return `${jobProfileId}-v1`;
+}
+
+export function createConfirmedJobProfileVersion(jobProfile: JobProfile): JobProfileVersion {
+  assertJobProfileConfirmed(jobProfile);
+
+  return {
+    id: jobProfile.currentVersionId ?? createDefaultJobProfileVersionId(jobProfile.id),
+    jobProfileId: jobProfile.id,
+    version: 1,
+    title: jobProfile.title,
+    jdText: jobProfile.jdText,
+    searchCondition: jobProfile.searchCondition,
+    hardRequirements: jobProfile.hardRequirements,
+    softRequirements: jobProfile.softRequirements,
+    status: "Confirmed",
+    createdAt: jobProfile.confirmedAt ?? new Date(),
+    confirmedAt: jobProfile.confirmedAt ?? new Date(),
+  };
 }

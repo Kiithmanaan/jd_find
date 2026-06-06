@@ -3,6 +3,7 @@ import type {
   AIAssessmentPort,
   AIAssessmentAuditSink,
   JobProfileRepository,
+  JobProfileVersionRepository,
   OneTimeSearchJob,
   SearchRunRepository,
   SourceAdapter,
@@ -15,6 +16,7 @@ export interface SearchRunJobHandlerDependencies {
   aiAssessment: AIAssessmentPort;
   aiAssessmentAudit?: AIAssessmentAuditSink;
   jobProfiles?: JobProfileRepository;
+  jobProfileVersions?: JobProfileVersionRepository;
   searchRuns?: SearchRunRepository;
   sourceAdapterFactory?: (job: OneTimeSearchJob) => SourceAdapter;
 }
@@ -32,6 +34,7 @@ export class SearchRunJobHandler {
       aiAssessment: this.dependencies.aiAssessment,
       aiAssessmentAudit: this.dependencies.aiAssessmentAudit,
       jobProfiles: this.dependencies.jobProfiles,
+      jobProfileVersions: this.dependencies.jobProfileVersions,
       searchRuns: this.dependencies.searchRuns,
       idGenerator: () => job.searchRunId,
     });

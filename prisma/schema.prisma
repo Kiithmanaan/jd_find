@@ -41,6 +41,7 @@ model JobProfileRecord {
   title             String
   jdText            String
   status            JobProfileStatus
+  currentVersionId  String?
   searchCondition   Json
   hardRequirements  Json
   softRequirements  Json
@@ -48,13 +49,35 @@ model JobProfileRecord {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   searchRuns        SearchRunRecord[]
+  versions          JobProfileVersionRecord[]
 
   @@index([status])
+}
+
+model JobProfileVersionRecord {
+  id                String             @id
+  jobProfileId      String
+  version           Int
+  title             String
+  jdText            String
+  searchCondition   Json
+  hardRequirements  Json
+  softRequirements  Json
+  status            String
+  createdAt         DateTime
+  confirmedAt       DateTime?
+  jobProfile        JobProfileRecord   @relation(fields: [jobProfileId], references: [id], onDelete: Cascade)
+  searchRuns        SearchRunRecord[]
+
+  @@index([jobProfileId])
+  @@index([jobProfileId, status])
+  @@unique([jobProfileId, version])
 }
 
 model SearchRunRecord {
   id                 String                  @id
   jobProfileId       String
+  jobProfileVersionId String?
   status             SearchRunStatus
   targetResultCount  Int
   interruptedReason  String?
@@ -65,8 +88,10 @@ model SearchRunRecord {
   createdAt          DateTime
   updatedAt          DateTime
   jobProfile         JobProfileRecord        @relation(fields: [jobProfileId], references: [id])
+  jobProfileVersion  JobProfileVersionRecord? @relation(fields: [jobProfileVersionId], references: [id])
 
   @@index([jobProfileId])
+  @@index([jobProfileVersionId])
   @@index([status])
 }
 
@@ -74,6 +99,7 @@ model AIAssessmentAuditRecord {
   id             String          @id
   searchRunId    String
   jobProfileId   String
+  jobProfileVersionId String?
   provider       String
   model          String
   candidateIds   Json
@@ -84,6 +110,7 @@ model AIAssessmentAuditRecord {
 
   @@index([searchRunId])
   @@index([jobProfileId])
+  @@index([jobProfileVersionId])
   @@index([provider, model])
 }
 
@@ -119,4 +146,29 @@ model SearchEventRecord {
   @@index([searchRunId])
   @@index([type])
   @@unique([searchRunId, sequence])
+}
+
+model HardConditionDimensionRecord {
+  id                  String   @id
+  key                 String   @unique
+  label               String
+  valueType           String
+  supportedMatchModes Json
+  allowMultiple       Boolean
+  createdAt           DateTime @default(now())
+  options             HardConditionOptionRecord[]
+}
+
+model HardConditionOptionRecord {
+  id           String   @id
+  dimensionKey String
+  value        String
+  label        String
+  aliases      Json
+  rank         Int?
+  createdAt    DateTime @default(now())
+  dimension    HardConditionDimensionRecord @relation(fields: [dimensionKey], references: [key], onDelete: Cascade)
+
+  @@index([dimensionKey])
+  @@unique([dimensionKey, value])
 }

@@ -1,18 +1,36 @@
 import { PrismaClient } from "@prisma/client";
-import type { JobProfileRepository, SearchRunRepository } from "../../application/ports.js";
-import type { JobProfile, SearchRun } from "../../domain/types.js";
+import type {
+  HardConditionConfigRepository,
+  JobProfileRepository,
+  JobProfileVersionRepository,
+  SearchRunRepository,
+} from "../../application/ports.js";
+import type {
+  HardConditionDimension,
+  HardConditionOption,
+  JobProfile,
+  JobProfileVersion,
+  SearchRun,
+} from "../../domain/types.js";
 import {
   toJobProfileCreateInput,
   toJobProfileDomain,
   toJobProfileUpdateInput,
+  toJobProfileVersionCreateInput,
+  toJobProfileVersionDomain,
+  toJobProfileVersionUpdateInput,
   toSearchRunCreateInput,
   toSearchRunDomain,
   toSearchRunUpdateInput,
   type JobProfilePersistenceRecord,
+  type JobProfileVersionPersistenceRecord,
   type SearchRunPersistenceRecord,
 } from "./prisma-mappers.js";
 
-export type PrismaLikeClient = Pick<PrismaClient, "jobProfileRecord" | "searchRunRecord">;
+export type PrismaLikeClient = Pick<
+  PrismaClient,
+  "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord"
+>;
 
 const searchRunInclude = {
   candidates: true,
@@ -41,6 +59,42 @@ export class PrismaJobProfileRepository implements JobProfileRepository {
   }
 }
 
+export class PrismaJobProfileVersionRepository implements JobProfileVersionRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async save(version: JobProfileVersion): Promise<JobProfileVersion> {
+    const record = await this.prisma.jobProfileVersionRecord.upsert({
+      where: { id: version.id },
+      create: toJobProfileVersionCreateInput(version),
+      update: toJobProfileVersionUpdateInput(version),
+    });
+
+    return toJobProfileVersionDomain(record as JobProfileVersionPersistenceRecord);
+  }
+
+  async findById(id: string): Promise<JobProfileVersion | undefined> {
+    const record = await this.prisma.jobProfileVersionRecord.findUnique({
+      where: { id },
+    });
+
+    return record ? toJobProfileVersionDomain(record as JobProfileVersionPersistenceRecord) : undefined;
+  }
+
+  async findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined> {
+    const record = await this.prisma.jobProfileVersionRecord.findFirst({
+      where: {
+        jobProfileId,
+        status: "Confirmed",
+      },
+      orderBy: {
+        version: "desc",
+      },
+    });
+
+    return record ? toJobProfileVersionDomain(record as JobProfileVersionPersistenceRecord) : undefined;
+  }
+}
+
 export class PrismaSearchRunRepository implements SearchRunRepository {
   constructor(private readonly prisma: PrismaLikeClient) {}
 
@@ -62,6 +116,54 @@ export class PrismaSearchRunRepository implements SearchRunRepository {
     });
 
     return record ? toSearchRunDomain(record as unknown as SearchRunPersistenceRecord) : undefined;
+  }
+}
+
+export class PrismaHardConditionConfigRepository implements HardConditionConfigRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async findDimensions(): Promise<HardConditionDimension[]> {
+    const records = await this.prisma.hardConditionDimensionRecord.findMany({
+      orderBy: { key: "asc" },
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      key: record.key,
+      label: record.label,
+      valueType: record.valueType as HardConditionDimension["valueType"],
+      supportedMatchModes: record.supportedMatchModes as unknown as HardConditionDimension["supportedMatchModes"],
+      allowMultiple: record.allowMultiple,
+      createdAt: record.createdAt,
+    }));
+  }
+
+  async findOptionsByDimensionKey(dimensionKey: string): Promise<HardConditionOption[]> {
+    const records = await this.prisma.hardConditionOptionRecord.findMany({
+      where: { dimensionKey },
+      orderBy: { value: "asc" },
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      dimensionKey: record.dimensionKey,
+      value: record.value,
+      label: record.label,
+      aliases: record.aliases as unknown as string[],
+      rank: record.rank ?? undefined,
+      createdAt: record.createdAt,
+    }));
+  }
+
+  async findAll(): Promise<Array<HardConditionDimension & { options: HardConditionOption[] }>> {
+    const dimensions = await this.findDimensions();
+
+    return Promise.all(
+      dimensions.map(async (dimension) => ({
+        ...dimension,
+        options: await this.findOptionsByDimensionKey(dimension.key),
+      })),
+    );
   }
 }
 

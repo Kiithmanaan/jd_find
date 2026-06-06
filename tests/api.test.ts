@@ -21,11 +21,28 @@ test("健康检查返回 ok", async () => {
   const app = createApp();
   const response = await app.inject({
     method: "GET",
-    url: "/health",
+    url: "/api/health",
   });
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { status: "ok" });
+});
+
+test("API 返回硬性条件配置", async () => {
+  const app = createApp();
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/hard-condition-config",
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const education = body.dimensions.find((dimension: { key: string }) => dimension.key === "education");
+  assert.ok(education);
+  assert.equal(
+    education.options.some((option: { value: string; rank?: number }) => option.value === "本科" && option.rank === 2),
+    true,
+  );
 });
 
 test("API 启动一次性寻访时只入队并返回可查询的 searchRunId", async () => {
@@ -34,7 +51,7 @@ test("API 启动一次性寻访时只入队并返回可查询的 searchRunId", a
   const app = createApp({ idGenerator: () => "api-run-1", searchRuns, searchRunQueue });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
       candidates: createCandidateDrafts(),
@@ -46,7 +63,7 @@ test("API 启动一次性寻访时只入队并返回可查询的 searchRunId", a
   const body = response.json();
   assert.equal(body.status, "Queued");
   assert.equal(body.searchRunId, "api-run-1");
-  assert.equal(body.statusUrl, "/search-runs/api-run-1");
+  assert.equal(body.statusUrl, "/api/search-runs/api-run-1");
   const queuedJob = searchRunQueue.findJobById(body.jobId);
   assert.equal(queuedJob?.source.type, "mock");
 
@@ -60,7 +77,7 @@ test("API 可在 worker 完成后查询 SearchRun 结果", async () => {
   const app = createApp({ idGenerator: () => "api-run-completed", searchRuns, searchRunQueue });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
       candidates: createCandidateDrafts(),
@@ -81,7 +98,7 @@ test("API 可在 worker 完成后查询 SearchRun 结果", async () => {
 
   const queryResponse = await app.inject({
     method: "GET",
-    url: "/search-runs/api-run-completed",
+    url: "/api/search-runs/api-run-completed",
   });
   assert.equal(queryResponse.statusCode, 200);
 
@@ -103,7 +120,7 @@ test("API 可查询一次寻访对应的 AI 评估审计快照", async () => {
   });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
       candidates: createCandidateDrafts(),
@@ -122,7 +139,7 @@ test("API 可查询一次寻访对应的 AI 评估审计快照", async () => {
 
   const queryResponse = await app.inject({
     method: "GET",
-    url: "/search-runs/api-run-audit/ai-assessment-audits",
+    url: "/api/search-runs/api-run-audit/ai-assessment-audits",
   });
 
   assert.equal(queryResponse.statusCode, 200);
@@ -137,7 +154,7 @@ test("API 查询不存在 SearchRun 的 AI 评估审计返回 404", async () => 
   const app = createApp();
   const response = await app.inject({
     method: "GET",
-    url: "/search-runs/missing-run/ai-assessment-audits",
+    url: "/api/search-runs/missing-run/ai-assessment-audits",
   });
 
   assert.equal(response.statusCode, 404);
@@ -150,7 +167,7 @@ test("API 支持 CSV 来源入队并由 worker 从文件完成寻访", async () 
   const app = createApp({ idGenerator: () => "api-csv-run", searchRuns, searchRunQueue });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
       sourceType: "csv",
@@ -172,7 +189,7 @@ test("API 支持 CSV 来源入队并由 worker 从文件完成寻访", async () 
 
   const queryResponse = await app.inject({
     method: "GET",
-    url: "/search-runs/api-csv-run",
+    url: "/api/search-runs/api-csv-run",
   });
 
   assert.equal(queryResponse.statusCode, 200);
@@ -185,7 +202,7 @@ test("API 查询不存在的 SearchRun 返回 404", async () => {
   const app = createApp();
   const response = await app.inject({
     method: "GET",
-    url: "/search-runs/missing-run",
+    url: "/api/search-runs/missing-run",
   });
 
   assert.equal(response.statusCode, 404);
@@ -196,7 +213,7 @@ test("API 拒绝未确认岗位画像启动寻访", async () => {
   const app = createApp({ idGenerator: () => "api-run-draft" });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createDraftJobProfile(),
       candidates: createCandidateDrafts(),
@@ -212,7 +229,7 @@ test("API 拒绝缺失 jobProfile 的非法请求且不入队", async () => {
   const app = createApp({ idGenerator: () => "api-invalid-run", searchRunQueue });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       candidates: createCandidateDrafts(),
     },
@@ -234,7 +251,7 @@ test("API 拒绝搜索关键词为空的岗位画像", async () => {
   const app = createApp({ idGenerator: () => "api-empty-keywords" });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile,
       candidates: createCandidateDrafts(),
@@ -257,7 +274,7 @@ test("API 拒绝非法 SourceLead URL", async () => {
   const app = createApp({ idGenerator: () => "api-invalid-url" });
   const response = await app.inject({
     method: "POST",
-    url: "/search-runs/one-time",
+    url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
       candidates,

@@ -4,6 +4,7 @@ import { SearchOrchestrator } from "../src/application/search-orchestrator.js";
 import {
   InMemoryAIAssessmentAuditSink,
   InMemoryJobProfileRepository,
+  InMemoryJobProfileVersionRepository,
   InMemorySearchRunRepository,
 } from "../src/infrastructure/memory/in-memory-repositories.js";
 import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.js";
@@ -12,6 +13,7 @@ import { createCandidateDrafts, createConfirmedJobProfile } from "./fixtures.js"
 
 test("SearchRun 编排会在关键状态后保存可恢复快照", async () => {
   const jobProfiles = new InMemoryJobProfileRepository();
+  const jobProfileVersions = new InMemoryJobProfileVersionRepository();
   const searchRuns = new InMemorySearchRunRepository();
   const aiAssessmentAudit = new InMemoryAIAssessmentAuditSink();
   const orchestrator = new SearchOrchestrator({
@@ -19,6 +21,7 @@ test("SearchRun 编排会在关键状态后保存可恢复快照", async () => {
     aiAssessment: new MockAIAssessment(),
     aiAssessmentAudit,
     jobProfiles,
+    jobProfileVersions,
     searchRuns,
     idGenerator: () => "persisted-run-1",
     auditIdGenerator: () => "audit-1",
@@ -28,9 +31,15 @@ test("SearchRun 编排会在关键状态后保存可恢复快照", async () => {
 
   const savedJobProfile = await jobProfiles.findById("job-1");
   assert.equal(savedJobProfile?.status, "Confirmed");
+  assert.equal(savedJobProfile?.currentVersionId, "job-1-v1");
+
+  const savedVersion = await jobProfileVersions.findById("job-1-v1");
+  assert.equal(savedVersion?.status, "Confirmed");
+  assert.equal(savedVersion?.version, 1);
 
   const savedSearchRun = await searchRuns.findById("persisted-run-1");
   assert.equal(savedSearchRun?.status, "Completed");
+  assert.equal(savedSearchRun?.jobProfileVersionId, "job-1-v1");
 
   const history = searchRuns.findHistoryById("persisted-run-1");
   assert.deepEqual(

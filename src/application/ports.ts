@@ -2,7 +2,10 @@ import type {
   CandidateDraft,
   CandidateResult,
   AIAssessmentAuditRecord,
+  HardConditionDimension,
+  HardConditionOption,
   JobProfile,
+  JobProfileVersion,
   MatchAssessment,
   RiskSignal,
   SearchRun,
@@ -36,6 +39,18 @@ export interface AIAssessmentAuditRepository extends AIAssessmentAuditSink {
 export interface JobProfileRepository {
   save(jobProfile: JobProfile): Promise<JobProfile>;
   findById(id: string): Promise<JobProfile | undefined>;
+}
+
+export interface JobProfileVersionRepository {
+  save(version: JobProfileVersion): Promise<JobProfileVersion>;
+  findById(id: string): Promise<JobProfileVersion | undefined>;
+  findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined>;
+}
+
+export interface HardConditionConfigRepository {
+  findDimensions(): Promise<HardConditionDimension[]>;
+  findOptionsByDimensionKey(dimensionKey: string): Promise<HardConditionOption[]>;
+  findAll(): Promise<Array<HardConditionDimension & { options: HardConditionOption[] }>>;
 }
 
 export interface SearchRunRepository {

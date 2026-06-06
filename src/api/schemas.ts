@@ -59,6 +59,7 @@ const jobProfileSchema = z.object({
   title: nonEmptyString,
   jdText: nonEmptyString,
   status: z.enum(["Draft", "Suggested", "Confirmed", "Archived"]),
+  currentVersionId: nonEmptyString.optional(),
   searchCondition: searchConditionSchema,
   hardRequirements: z.array(hardRequirementSchema).min(1),
   softRequirements: z.array(softRequirementSchema).min(1),

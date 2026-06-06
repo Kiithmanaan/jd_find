@@ -94,6 +94,8 @@ npm run prisma:deploy
 - `prisma/migrations/20260604150000_init/migration.sql`
 - `prisma/migrations/20260604161000_ai_assessment_audit/migration.sql`
 - `prisma/migrations/20260604170000_search_run_failure_reason/migration.sql`
+- `prisma/migrations/20260606110000_job_profile_versions/migration.sql`
+- `prisma/migrations/20260606112000_hard_condition_config/migration.sql`
 
 ## 运行 API
 
@@ -113,13 +115,19 @@ http://127.0.0.1:3000
 健康检查：
 
 ```bash
-curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3000/api/health
+```
+
+硬性条件配置：
+
+```text
+GET /api/hard-condition-config
 ```
 
 一次性寻访启动接口采用异步语义：
 
 ```text
-POST /search-runs/one-time
+POST /api/search-runs/one-time
 → 202 Accepted
 → { jobId, searchRunId, status: "Queued", statusUrl }
 ```
@@ -150,7 +158,7 @@ CSV 来源请求体：
 任务查询：
 
 ```text
-GET /search-runs/:id
+GET /api/search-runs/:id
 ```
 
 当来源适配器或 AI 评估异常时，Worker 仍会保存可查询的 `SearchRun`：
@@ -166,7 +174,7 @@ GET /search-runs/:id
 AI 评估审计查询：
 
 ```text
-GET /search-runs/:id/ai-assessment-audits
+GET /api/search-runs/:id/ai-assessment-audits
 ```
 
 错误边界：
@@ -259,7 +267,7 @@ fingerprint,name,title,city,educationLevel,yearsOfExperience,industries,keywords
 审计记录可以通过 API 按寻访任务查询：
 
 ```text
-GET /search-runs/:id/ai-assessment-audits
+GET /api/search-runs/:id/ai-assessment-audits
 → { searchRunId, records }
 ```
 

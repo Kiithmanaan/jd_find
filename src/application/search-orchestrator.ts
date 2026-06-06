@@ -10,11 +10,13 @@ import {
   startSearchRun,
 } from "../domain/search-run.js";
 import { normalizeAIAssessments } from "../domain/ai-assessment-contract.js";
+import { createConfirmedJobProfileVersion, createDefaultJobProfileVersionId } from "../domain/job-profile.js";
 import type { JobProfile, MatchAssessment, SearchRun } from "../domain/types.js";
 import type {
   AIAssessmentAuditSink,
   AIAssessmentPort,
   JobProfileRepository,
+  JobProfileVersionRepository,
   SearchRunRepository,
   SourceAdapter,
 } from "./ports.js";
@@ -24,6 +26,7 @@ export interface SearchOrchestratorDependencies {
   aiAssessment: AIAssessmentPort;
   aiAssessmentAudit?: AIAssessmentAuditSink;
   jobProfiles?: JobProfileRepository;
+  jobProfileVersions?: JobProfileVersionRepository;
   searchRuns?: SearchRunRepository;
   idGenerator: () => string;
   auditIdGenerator?: () => string;
@@ -33,28 +36,33 @@ export class SearchOrchestrator {
   constructor(private readonly dependencies: SearchOrchestratorDependencies) {}
 
   async runOneTimeSearch(jobProfile: JobProfile): Promise<SearchRun> {
+    const runnableJobProfile = normalizeConfirmedJobProfileVersion(jobProfile);
+
     if (this.dependencies.jobProfiles) {
-      await this.dependencies.jobProfiles.save(jobProfile);
+      await this.dependencies.jobProfiles.save(runnableJobProfile);
+    }
+    if (this.dependencies.jobProfileVersions && runnableJobProfile.status === "Confirmed") {
+      await this.dependencies.jobProfileVersions.save(createConfirmedJobProfileVersion(runnableJobProfile));
     }
 
-    let searchRun = createSearchRun(jobProfile, this.dependencies.idGenerator());
+    let searchRun = createSearchRun(runnableJobProfile, this.dependencies.idGenerator());
     searchRun = startSearchRun(searchRun);
     searchRun = await this.saveSearchRun(searchRun);
 
     try {
-      const acquisition = await this.dependencies.sourceAdapter.acquireCandidates(jobProfile, searchRun);
+      const acquisition = await this.dependencies.sourceAdapter.acquireCandidates(runnableJobProfile, searchRun);
 
       if (acquisition.riskSignal) {
         return this.saveSearchRun(interruptSearchRun(searchRun, acquisition.riskSignal));
       }
 
-      searchRun = acquireCandidateResults(searchRun, jobProfile, acquisition.candidates);
+      searchRun = acquireCandidateResults(searchRun, runnableJobProfile, acquisition.candidates);
       searchRun = await this.saveSearchRun(searchRun);
 
       searchRun = deduplicateWithinSearchRun(searchRun);
       searchRun = await this.saveSearchRun(searchRun);
 
-      searchRun = applyHardFilter(searchRun, jobProfile);
+      searchRun = applyHardFilter(searchRun, runnableJobProfile);
       searchRun = await this.saveSearchRun(searchRun);
 
       const hardPassedCandidates = searchRun.candidates.filter(
@@ -62,9 +70,9 @@ export class SearchOrchestrator {
       );
       const assessments = normalizeAIAssessments(
         hardPassedCandidates,
-        await this.dependencies.aiAssessment.assessCandidates(jobProfile, hardPassedCandidates),
+        await this.dependencies.aiAssessment.assessCandidates(runnableJobProfile, hardPassedCandidates),
       );
-      await this.recordAIAssessmentAudit(searchRun, jobProfile, hardPassedCandidates, assessments);
+      await this.recordAIAssessmentAudit(searchRun, runnableJobProfile, hardPassedCandidates, assessments);
 
       searchRun = applySoftAssessments(searchRun, assessments);
       searchRun = await this.saveSearchRun(searchRun);
@@ -98,6 +106,7 @@ export class SearchOrchestrator {
       id: this.dependencies.auditIdGenerator?.() ?? crypto.randomUUID(),
       searchRunId: searchRun.id,
       jobProfileId: jobProfile.id,
+      jobProfileVersionId: searchRun.jobProfileVersionId,
       provider: this.dependencies.aiAssessment.providerName ?? "unknown",
       model: this.dependencies.aiAssessment.modelName ?? "unknown",
       candidateIds: candidates.map((candidate) => candidate.id),
@@ -130,4 +139,15 @@ function formatFailureReason(error: unknown): string {
   }
 
   return "UnknownError: Search run failed.";
+}
+
+function normalizeConfirmedJobProfileVersion(jobProfile: JobProfile): JobProfile {
+  if (jobProfile.status !== "Confirmed" || jobProfile.currentVersionId) {
+    return jobProfile;
+  }
+
+  return {
+    ...jobProfile,
+    currentVersionId: createDefaultJobProfileVersionId(jobProfile.id),
+  };
 }

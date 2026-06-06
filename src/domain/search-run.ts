@@ -1,6 +1,6 @@
 import { createSearchEvent } from "./events.js";
 import { evaluateHardRequirements } from "./hard-filter.js";
-import { assertJobProfileConfirmed } from "./job-profile.js";
+import { assertJobProfileConfirmed, createDefaultJobProfileVersionId } from "./job-profile.js";
 import type {
   CandidateDraft,
   CandidateResult,
@@ -20,6 +20,7 @@ export function createSearchRun(jobProfile: JobProfile, id: string): SearchRun {
   return {
     id,
     jobProfileId: jobProfile.id,
+    jobProfileVersionId: jobProfile.currentVersionId ?? createDefaultJobProfileVersionId(jobProfile.id),
     status: "Created",
     targetResultCount: MVP_SINGLE_SEARCH_LIMIT,
     candidates: [],

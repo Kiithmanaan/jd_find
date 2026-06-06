@@ -1,10 +1,19 @@
 import type {
   AIAssessmentAuditRepository,
   AIAssessmentAuditSink,
+  HardConditionConfigRepository,
   JobProfileRepository,
+  JobProfileVersionRepository,
   SearchRunRepository,
 } from "../../application/ports.js";
-import type { AIAssessmentAuditRecord, JobProfile, SearchRun } from "../../domain/types.js";
+import type {
+  AIAssessmentAuditRecord,
+  HardConditionDimension,
+  HardConditionOption,
+  JobProfile,
+  JobProfileVersion,
+  SearchRun,
+} from "../../domain/types.js";
 
 export class InMemoryJobProfileRepository implements JobProfileRepository {
   private readonly records = new Map<string, JobProfile>();
@@ -17,6 +26,28 @@ export class InMemoryJobProfileRepository implements JobProfileRepository {
   async findById(id: string): Promise<JobProfile | undefined> {
     const record = this.records.get(id);
     return record ? structuredClone(record) : undefined;
+  }
+}
+
+export class InMemoryJobProfileVersionRepository implements JobProfileVersionRepository {
+  private readonly records = new Map<string, JobProfileVersion>();
+
+  async save(version: JobProfileVersion): Promise<JobProfileVersion> {
+    this.records.set(version.id, structuredClone(version));
+    return structuredClone(version);
+  }
+
+  async findById(id: string): Promise<JobProfileVersion | undefined> {
+    const record = this.records.get(id);
+    return record ? structuredClone(record) : undefined;
+  }
+
+  async findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined> {
+    const versions = [...this.records.values()]
+      .filter((record) => record.jobProfileId === jobProfileId && record.status === "Confirmed")
+      .sort((left, right) => right.version - left.version);
+
+    return versions[0] ? structuredClone(versions[0]) : undefined;
   }
 }
 
@@ -44,6 +75,30 @@ export class InMemorySearchRunRepository implements SearchRunRepository {
   }
 }
 
+export class InMemoryHardConditionConfigRepository implements HardConditionConfigRepository {
+  private readonly dimensions: HardConditionDimension[] = createDefaultHardConditionDimensions();
+  private readonly options: HardConditionOption[] = createDefaultHardConditionOptions();
+
+  async findDimensions(): Promise<HardConditionDimension[]> {
+    return this.dimensions.map((dimension) => structuredClone(dimension));
+  }
+
+  async findOptionsByDimensionKey(dimensionKey: string): Promise<HardConditionOption[]> {
+    return this.options
+      .filter((option) => option.dimensionKey === dimensionKey)
+      .map((option) => structuredClone(option));
+  }
+
+  async findAll(): Promise<Array<HardConditionDimension & { options: HardConditionOption[] }>> {
+    return Promise.all(
+      this.dimensions.map(async (dimension) => ({
+        ...structuredClone(dimension),
+        options: await this.findOptionsByDimensionKey(dimension.key),
+      })),
+    );
+  }
+}
+
 export class InMemoryAIAssessmentAuditSink implements AIAssessmentAuditSink, AIAssessmentAuditRepository {
   private readonly records: AIAssessmentAuditRecord[] = [];
 
@@ -59,4 +114,97 @@ export class InMemoryAIAssessmentAuditSink implements AIAssessmentAuditSink, AIA
     const records = await this.findAll();
     return records.filter((record) => record.searchRunId === searchRunId);
   }
+}
+
+function createDefaultHardConditionDimensions(): HardConditionDimension[] {
+  const now = new Date("2026-06-06T00:00:00.000Z");
+  return [
+    {
+      id: "hard-dimension-keyword",
+      key: "keyword",
+      label: "全文关键词",
+      valueType: "text",
+      supportedMatchModes: ["exact", "normalizedContains"],
+      allowMultiple: true,
+      createdAt: now,
+    },
+    {
+      id: "hard-dimension-city",
+      key: "city",
+      label: "城市",
+      valueType: "option",
+      supportedMatchModes: ["optionAny"],
+      allowMultiple: true,
+      createdAt: now,
+    },
+    {
+      id: "hard-dimension-industry",
+      key: "industry",
+      label: "行业",
+      valueType: "option",
+      supportedMatchModes: ["optionAny"],
+      allowMultiple: true,
+      createdAt: now,
+    },
+    {
+      id: "hard-dimension-education",
+      key: "education",
+      label: "学历",
+      valueType: "option",
+      supportedMatchModes: ["rankAtLeast"],
+      allowMultiple: false,
+      createdAt: now,
+    },
+    {
+      id: "hard-dimension-years",
+      key: "yearsOfExperience",
+      label: "最低工作年限",
+      valueType: "number",
+      supportedMatchModes: ["min"],
+      allowMultiple: false,
+      createdAt: now,
+    },
+  ];
+}
+
+function createDefaultHardConditionOptions(): HardConditionOption[] {
+  const now = new Date("2026-06-06T00:00:00.000Z");
+  return [
+    {
+      id: "hard-option-education-college",
+      dimensionKey: "education",
+      value: "大专",
+      label: "大专",
+      aliases: ["专科"],
+      rank: 1,
+      createdAt: now,
+    },
+    {
+      id: "hard-option-education-bachelor",
+      dimensionKey: "education",
+      value: "本科",
+      label: "本科",
+      aliases: ["学士"],
+      rank: 2,
+      createdAt: now,
+    },
+    {
+      id: "hard-option-education-master",
+      dimensionKey: "education",
+      value: "硕士",
+      label: "硕士",
+      aliases: ["研究生"],
+      rank: 3,
+      createdAt: now,
+    },
+    {
+      id: "hard-option-education-doctor",
+      dimensionKey: "education",
+      value: "博士",
+      label: "博士",
+      aliases: ["博士研究生"],
+      rank: 4,
+      createdAt: now,
+    },
+  ];
 }

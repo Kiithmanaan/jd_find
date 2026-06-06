@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { BullMqSearchRunQueue } from "../infrastructure/bullmq/bullmq-search-run-queue.js";
 import {
   createPrismaClient,
+  PrismaHardConditionConfigRepository,
   PrismaJobProfileRepository,
+  PrismaJobProfileVersionRepository,
   PrismaSearchRunRepository,
 } from "../infrastructure/prisma/prisma-repositories.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
@@ -27,6 +29,8 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
 
   const app = createApp({
     jobProfiles: new PrismaJobProfileRepository(prisma),
+    jobProfileVersions: new PrismaJobProfileVersionRepository(prisma),
+    hardConditionConfig: new PrismaHardConditionConfigRepository(prisma),
     searchRuns: new PrismaSearchRunRepository(prisma),
     aiAssessmentAudits: new PrismaAIAssessmentAuditSink(prisma),
     searchRunQueue,

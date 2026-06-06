@@ -4,7 +4,12 @@ import type { AIAssessmentPort } from "../application/ports.js";
 import { HttpAIAssessment } from "../infrastructure/http/http-ai-assessment.js";
 import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
-import { createPrismaClient, PrismaJobProfileRepository, PrismaSearchRunRepository } from "../infrastructure/prisma/prisma-repositories.js";
+import {
+  createPrismaClient,
+  PrismaJobProfileRepository,
+  PrismaJobProfileVersionRepository,
+  PrismaSearchRunRepository,
+} from "../infrastructure/prisma/prisma-repositories.js";
 import { ONE_TIME_SEARCH_JOB_NAME } from "../infrastructure/bullmq/bullmq-search-run-queue.js";
 import type { OneTimeSearchJob } from "../application/ports.js";
 import { loadEnvFile } from "../config/load-env.js";
@@ -21,6 +26,7 @@ const handler = new SearchRunJobHandler({
   aiAssessment,
   aiAssessmentAudit: new PrismaAIAssessmentAuditSink(prisma),
   jobProfiles: new PrismaJobProfileRepository(prisma),
+  jobProfileVersions: new PrismaJobProfileVersionRepository(prisma),
   searchRuns: new PrismaSearchRunRepository(prisma),
 });
 

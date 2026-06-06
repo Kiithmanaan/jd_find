@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type {
   CandidateResult,
   JobProfile,
+  JobProfileVersion,
   SearchEvent,
   SearchRun,
 } from "../../domain/types.js";
@@ -11,15 +12,31 @@ export type JobProfilePersistenceRecord = {
   title: string;
   jdText: string;
   status: JobProfile["status"];
+  currentVersionId: string | null;
   searchCondition: Prisma.JsonValue;
   hardRequirements: Prisma.JsonValue;
   softRequirements: Prisma.JsonValue;
   confirmedAt: Date | null;
 };
 
+export type JobProfileVersionPersistenceRecord = {
+  id: string;
+  jobProfileId: string;
+  version: number;
+  title: string;
+  jdText: string;
+  searchCondition: Prisma.JsonValue;
+  hardRequirements: Prisma.JsonValue;
+  softRequirements: Prisma.JsonValue;
+  status: JobProfileVersion["status"];
+  createdAt: Date;
+  confirmedAt: Date | null;
+};
+
 export type SearchRunPersistenceRecord = {
   id: string;
   jobProfileId: string;
+  jobProfileVersionId: string;
   status: SearchRun["status"];
   targetResultCount: number;
   interruptedReason: string | null;
@@ -58,6 +75,7 @@ export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfi
     title: jobProfile.title,
     jdText: jobProfile.jdText,
     status: jobProfile.status,
+    currentVersionId: jobProfile.currentVersionId ?? null,
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
@@ -70,6 +88,7 @@ export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfi
     title: jobProfile.title,
     jdText: jobProfile.jdText,
     status: jobProfile.status,
+    currentVersionId: jobProfile.currentVersionId ?? null,
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
@@ -83,9 +102,64 @@ export function toJobProfileDomain(record: JobProfilePersistenceRecord): JobProf
     title: record.title,
     jdText: record.jdText,
     status: record.status,
+    currentVersionId: record.currentVersionId ?? undefined,
     searchCondition: record.searchCondition as unknown as JobProfile["searchCondition"],
     hardRequirements: record.hardRequirements as unknown as JobProfile["hardRequirements"],
     softRequirements: record.softRequirements as unknown as JobProfile["softRequirements"],
+    confirmedAt: record.confirmedAt ?? undefined,
+  };
+}
+
+export function toJobProfileVersionCreateInput(
+  version: JobProfileVersion,
+): Prisma.JobProfileVersionRecordCreateInput {
+  return {
+    id: version.id,
+    jobProfile: {
+      connect: {
+        id: version.jobProfileId,
+      },
+    },
+    version: version.version,
+    title: version.title,
+    jdText: version.jdText,
+    searchCondition: toJsonInput(version.searchCondition),
+    hardRequirements: toJsonInput(version.hardRequirements),
+    softRequirements: toJsonInput(version.softRequirements),
+    status: version.status,
+    createdAt: version.createdAt,
+    confirmedAt: version.confirmedAt ?? null,
+  };
+}
+
+export function toJobProfileVersionUpdateInput(
+  version: JobProfileVersion,
+): Prisma.JobProfileVersionRecordUpdateInput {
+  return {
+    version: version.version,
+    title: version.title,
+    jdText: version.jdText,
+    searchCondition: toJsonInput(version.searchCondition),
+    hardRequirements: toJsonInput(version.hardRequirements),
+    softRequirements: toJsonInput(version.softRequirements),
+    status: version.status,
+    createdAt: version.createdAt,
+    confirmedAt: version.confirmedAt ?? null,
+  };
+}
+
+export function toJobProfileVersionDomain(record: JobProfileVersionPersistenceRecord): JobProfileVersion {
+  return {
+    id: record.id,
+    jobProfileId: record.jobProfileId,
+    version: record.version,
+    title: record.title,
+    jdText: record.jdText,
+    searchCondition: record.searchCondition as unknown as JobProfileVersion["searchCondition"],
+    hardRequirements: record.hardRequirements as unknown as JobProfileVersion["hardRequirements"],
+    softRequirements: record.softRequirements as unknown as JobProfileVersion["softRequirements"],
+    status: record.status,
+    createdAt: record.createdAt,
     confirmedAt: record.confirmedAt ?? undefined,
   };
 }
@@ -94,6 +168,7 @@ export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun
   return {
     id: record.id,
     jobProfileId: record.jobProfileId,
+    jobProfileVersionId: record.jobProfileVersionId,
     status: record.status,
     targetResultCount: record.targetResultCount,
     interruptedReason: record.interruptedReason ?? undefined,
@@ -115,6 +190,11 @@ export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRe
         id: searchRun.jobProfileId,
       },
     },
+    jobProfileVersion: {
+      connect: {
+        id: searchRun.jobProfileVersionId,
+      },
+    },
     status: searchRun.status,
     targetResultCount: searchRun.targetResultCount,
     interruptedReason: searchRun.interruptedReason ?? null,
@@ -133,6 +213,11 @@ export function toSearchRunCreateInput(searchRun: SearchRun): Prisma.SearchRunRe
 export function toSearchRunUpdateInput(searchRun: SearchRun): Prisma.SearchRunRecordUpdateInput {
   return {
     status: searchRun.status,
+    jobProfileVersion: {
+      connect: {
+        id: searchRun.jobProfileVersionId,
+      },
+    },
     targetResultCount: searchRun.targetResultCount,
     interruptedReason: searchRun.interruptedReason ?? null,
     failureReason: searchRun.failureReason ?? null,

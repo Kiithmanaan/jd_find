@@ -1,13 +1,20 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import type {
   AIAssessmentAuditRepository,
+  HardConditionConfigRepository,
   JobProfileRepository,
+  JobProfileVersionRepository,
   SearchRunQueue,
   SearchRunRepository,
 } from "../application/ports.js";
-import { assertJobProfileConfirmed } from "../domain/job-profile.js";
+import {
+  assertJobProfileConfirmed,
+  createConfirmedJobProfileVersion,
+  createDefaultJobProfileVersionId,
+} from "../domain/job-profile.js";
 import {
   InMemoryAIAssessmentAuditSink,
+  InMemoryHardConditionConfigRepository,
   InMemoryJobProfileRepository,
   InMemorySearchRunRepository,
 } from "../infrastructure/memory/in-memory-repositories.js";
@@ -17,6 +24,8 @@ import { formatZodError, oneTimeSearchRequestSchema } from "./schemas.js";
 export interface CreateAppOptions {
   idGenerator?: () => string;
   jobProfiles?: JobProfileRepository;
+  jobProfileVersions?: JobProfileVersionRepository;
+  hardConditionConfig?: HardConditionConfigRepository;
   searchRuns?: SearchRunRepository;
   aiAssessmentAudits?: AIAssessmentAuditRepository;
   searchRunQueue?: SearchRunQueue;
@@ -29,13 +38,20 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const jobProfiles = options.jobProfiles ?? new InMemoryJobProfileRepository();
   const searchRuns = options.searchRuns ?? new InMemorySearchRunRepository();
   const aiAssessmentAudits = options.aiAssessmentAudits ?? new InMemoryAIAssessmentAuditSink();
+  const hardConditionConfig = options.hardConditionConfig ?? new InMemoryHardConditionConfigRepository();
   const searchRunQueue = options.searchRunQueue ?? new InMemorySearchRunQueue();
 
-  app.get("/health", async () => {
+  app.get("/api/health", async () => {
     return { status: "ok" };
   });
 
-  app.post("/search-runs/one-time", async (request, reply) => {
+  app.get("/api/hard-condition-config", async () => {
+    return {
+      dimensions: await hardConditionConfig.findAll(),
+    };
+  });
+
+  app.post("/api/search-runs/one-time", async (request, reply) => {
     const idGenerator = options.idGenerator ?? (() => crypto.randomUUID());
     const searchRunId = idGenerator();
     const parsedBody = oneTimeSearchRequestSchema.safeParse(request.body);
@@ -48,13 +64,20 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     }
 
     const body = parsedBody.data;
+    const jobProfile = body.jobProfile.currentVersionId
+      ? body.jobProfile
+      : {
+          ...body.jobProfile,
+          currentVersionId: createDefaultJobProfileVersionId(body.jobProfile.id),
+        };
 
-    assertJobProfileConfirmed(body.jobProfile);
-    await jobProfiles.save(body.jobProfile);
+    assertJobProfileConfirmed(jobProfile);
+    await jobProfiles.save(jobProfile);
+    await options.jobProfileVersions?.save(createConfirmedJobProfileVersion(jobProfile));
 
     const queued = await searchRunQueue.enqueueOneTimeSearch({
       searchRunId,
-      jobProfile: body.jobProfile,
+      jobProfile,
       source:
         body.sourceType === "csv"
           ? {
@@ -72,11 +95,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       jobId: queued.jobId,
       searchRunId: queued.searchRunId,
       status: "Queued",
-      statusUrl: `/search-runs/${queued.searchRunId}`,
+      statusUrl: `/api/search-runs/${queued.searchRunId}`,
     });
   });
 
-  app.get<{ Params: { id: string } }>("/search-runs/:id", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id", async (request, reply) => {
     const searchRun = await searchRuns.findById(request.params.id);
 
     if (!searchRun) {
@@ -89,7 +112,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     return reply.code(200).send(searchRun);
   });
 
-  app.get<{ Params: { id: string } }>("/search-runs/:id/ai-assessment-audits", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {
     const searchRun = await searchRuns.findById(request.params.id);
 
     if (!searchRun) {

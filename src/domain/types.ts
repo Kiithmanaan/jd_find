@@ -57,6 +57,29 @@ export type HardRequirementPredicate =
   | { type: "keywordAny"; values: string[] }
   | { type: "industryIn"; values: string[] };
 
+export type HardConditionValueType = "text" | "number" | "option";
+export type HardConditionMatchMode = "exact" | "normalizedContains" | "min" | "optionAny" | "rankAtLeast";
+
+export interface HardConditionDimension {
+  id: Identifier;
+  key: string;
+  label: string;
+  valueType: HardConditionValueType;
+  supportedMatchModes: HardConditionMatchMode[];
+  allowMultiple: boolean;
+  createdAt: Date;
+}
+
+export interface HardConditionOption {
+  id: Identifier;
+  dimensionKey: string;
+  value: string;
+  label: string;
+  aliases: string[];
+  rank?: number;
+  createdAt: Date;
+}
+
 export interface SoftRequirement {
   key: string;
   label: string;
@@ -69,9 +92,24 @@ export interface JobProfile {
   title: string;
   jdText: string;
   status: JobProfileStatus;
+  currentVersionId?: Identifier;
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  confirmedAt?: Date;
+}
+
+export interface JobProfileVersion {
+  id: Identifier;
+  jobProfileId: Identifier;
+  version: number;
+  title: string;
+  jdText: string;
+  searchCondition: SearchCondition;
+  hardRequirements: HardRequirement[];
+  softRequirements: SoftRequirement[];
+  status: "Draft" | "Confirmed";
+  createdAt: Date;
   confirmedAt?: Date;
 }
 
@@ -91,12 +129,14 @@ export interface MatchAssessment {
   fitPoints: string[];
   riskPoints: string[];
   assessedAt: Date;
+  jobProfileVersionId?: Identifier;
 }
 
 export interface AIAssessmentAuditRecord {
   id: Identifier;
   searchRunId: Identifier;
   jobProfileId: Identifier;
+  jobProfileVersionId?: Identifier;
   provider: string;
   model: string;
   candidateIds: Identifier[];
@@ -143,6 +183,7 @@ export interface SearchEvent {
 export interface SearchRun {
   id: Identifier;
   jobProfileId: Identifier;
+  jobProfileVersionId: Identifier;
   status: SearchRunStatus;
   targetResultCount: number;
   candidates: CandidateResult[];
