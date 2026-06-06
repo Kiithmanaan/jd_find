@@ -272,6 +272,17 @@ npm run worker:search
 - `docs/pre-implementation-decisions.md`：代码实现前确认清单。
 - `docs/confirmed-decisions.md`：当前已确认的产品与工程决策。
 - `docs/non-code-todo.md`：非代码类 TODO 清单。
+- `docs/demo-script.md`：第一阶段本地演示脚本。
+- `docs/acceptance-checklist.md`：第一阶段验收清单。
+- `docs/plugin-integration-protocol.md`：浏览器插件接入协议。
+- `docs/ai-agent-spec.md`：AI 与 Agent 输入、输出、版本和验收口径。
+- `docs/hard-condition-config.md`：硬性条件配置说明。
+- `docs/frontend-product-design.md`：前端产品设计。
+- `docs/demo-data.md`：第一阶段演示岗位画像和候选人样例。
+- `docs/openapi.yaml`：第一阶段 OpenAPI 规格。
+- `docs/development-guide.md`：开发手册。
+- `docs/deployment-guide.md`：部署手册。
+- `docs/operations-runbook.md`：运营与排障手册。
 
 ## Source Adapter 契约
 
