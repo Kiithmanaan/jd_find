@@ -1,7 +1,10 @@
 import { DomainError } from "./errors.js";
 import type { CandidateResult, MatchAssessment } from "./types.js";
 
-const FINAL_DECISION_TERMS = ["最终推荐", "建议录用", "必须沟通", "直接推荐", "确定合适"];
+export const MATCH_ASSESSMENT_PROMPT_VERSION = "match-assessment-v1";
+export const MATCH_ASSESSMENT_AGENT_VERSION = "jd-match-assessment-v1";
+
+const RECOMMENDATIONS: MatchAssessment["recommendation"][] = ["推荐", "待定", "不推荐"];
 
 export function normalizeAIAssessments(
   candidates: CandidateResult[],
@@ -28,20 +31,46 @@ export function normalizeAIAssessments(
 }
 
 export function normalizeMatchAssessment(assessment: MatchAssessment): MatchAssessment {
-  const fitPoints = normalizeExplanationPoints(assessment.fitPoints);
-  const riskPoints = normalizeExplanationPoints(assessment.riskPoints);
+  const matchedPoints = normalizeLimitedPoints(assessment.matchedPoints, "matchedPoints");
+  const unmatchedPoints = normalizeLimitedPoints(assessment.unmatchedPoints, "unmatchedPoints");
+  const riskPoints = normalizeLimitedPoints(assessment.riskPoints, "riskPoints");
+  const recommendationReason = assessment.recommendationReason.trim();
+  const trace = assessment.trace.trim();
+  const promptVersion = assessment.promptVersion.trim();
+  const agentVersion = assessment.agentVersion.trim();
 
-  if (fitPoints.length === 0) {
-    throw new DomainError("AI assessment must include at least one fit point.");
+  if (!RECOMMENDATIONS.includes(assessment.recommendation)) {
+    throw new DomainError("AI assessment recommendation must be 推荐, 待定, or 不推荐.");
   }
 
-  assertNoFinalDecisionLanguage([...fitPoints, ...riskPoints]);
+  if (matchedPoints.length === 0) {
+    throw new DomainError("AI assessment must include at least one matched point.");
+  }
+
+  if (!recommendationReason) {
+    throw new DomainError("AI assessment must include recommendationReason.");
+  }
+
+  if (!trace) {
+    throw new DomainError("AI assessment must include trace.");
+  }
+
+  if (!promptVersion || !agentVersion) {
+    throw new DomainError("AI assessment must include promptVersion and agentVersion.");
+  }
 
   return {
     score: clampScore(assessment.score),
-    fitPoints,
+    recommendation: assessment.recommendation,
+    recommendationReason,
+    matchedPoints,
+    unmatchedPoints,
     riskPoints,
+    trace,
     assessedAt: assessment.assessedAt,
+    jobProfileVersionId: assessment.jobProfileVersionId,
+    promptVersion,
+    agentVersion,
   };
 }
 
@@ -53,16 +82,12 @@ function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-function normalizeExplanationPoints(points: string[]): string[] {
-  return points.map((point) => point.trim()).filter(Boolean);
-}
+function normalizeLimitedPoints(points: string[], fieldName: string): string[] {
+  const normalized = points.map((point) => point.trim()).filter(Boolean);
 
-function assertNoFinalDecisionLanguage(points: string[]): void {
-  const violatingPoint = points.find((point) =>
-    FINAL_DECISION_TERMS.some((term) => point.includes(term)),
-  );
-
-  if (violatingPoint) {
-    throw new DomainError(`AI assessment must not contain final decision language: ${violatingPoint}`);
+  if (normalized.length > 3) {
+    throw new DomainError(`AI assessment ${fieldName} must include no more than 3 points.`);
   }
+
+  return normalized;
 }

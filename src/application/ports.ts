@@ -51,6 +51,7 @@ export interface UserRepository {
 export interface JobProfileVersionRepository {
   save(version: JobProfileVersion): Promise<JobProfileVersion>;
   findById(id: string): Promise<JobProfileVersion | undefined>;
+  findByJobProfileId(jobProfileId: string): Promise<JobProfileVersion[]>;
   findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined>;
 }
 
@@ -63,6 +64,7 @@ export interface HardConditionConfigRepository {
 export interface SearchRunRepository {
   save(searchRun: SearchRun): Promise<SearchRun>;
   findById(id: string): Promise<SearchRun | undefined>;
+  findByJobProfileId(jobProfileId: string): Promise<SearchRun[]>;
 }
 
 export interface OneTimeSearchJob {

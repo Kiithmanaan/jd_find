@@ -1,4 +1,8 @@
 import type { AIAssessmentPort } from "../../application/ports.js";
+import {
+  MATCH_ASSESSMENT_AGENT_VERSION,
+  MATCH_ASSESSMENT_PROMPT_VERSION,
+} from "../../domain/ai-assessment-contract.js";
 import { DomainError } from "../../domain/errors.js";
 import type { CandidateResult, JobProfile, MatchAssessment } from "../../domain/types.js";
 
@@ -15,8 +19,14 @@ interface HttpAIAssessmentResponse {
   assessments?: Array<{
     candidateId?: unknown;
     score?: unknown;
-    fitPoints?: unknown;
+    recommendation?: unknown;
+    recommendationReason?: unknown;
+    matchedPoints?: unknown;
+    unmatchedPoints?: unknown;
     riskPoints?: unknown;
+    trace?: unknown;
+    promptVersion?: unknown;
+    agentVersion?: unknown;
   }>;
 }
 
@@ -103,21 +113,47 @@ export function parseHttpAIAssessmentResponse(response: unknown): Map<string, Ma
       throw new DomainError(`HTTP AI assessment for ${item.candidateId} is missing numeric score.`);
     }
 
-    if (!Array.isArray(item.fitPoints) || !item.fitPoints.every((point) => typeof point === "string")) {
-      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid fitPoints.`);
+    if (!isRecommendation(item.recommendation)) {
+      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid recommendation.`);
+    }
+
+    if (typeof item.recommendationReason !== "string") {
+      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid recommendationReason.`);
+    }
+
+    if (!Array.isArray(item.matchedPoints) || !item.matchedPoints.every((point) => typeof point === "string")) {
+      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid matchedPoints.`);
+    }
+
+    if (!Array.isArray(item.unmatchedPoints) || !item.unmatchedPoints.every((point) => typeof point === "string")) {
+      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid unmatchedPoints.`);
     }
 
     if (!Array.isArray(item.riskPoints) || !item.riskPoints.every((point) => typeof point === "string")) {
       throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid riskPoints.`);
     }
 
+    if (typeof item.trace !== "string") {
+      throw new DomainError(`HTTP AI assessment for ${item.candidateId} has invalid trace.`);
+    }
+
     assessments.set(item.candidateId, {
       score: item.score,
-      fitPoints: item.fitPoints,
+      recommendation: item.recommendation,
+      recommendationReason: item.recommendationReason,
+      matchedPoints: item.matchedPoints,
+      unmatchedPoints: item.unmatchedPoints,
       riskPoints: item.riskPoints,
+      trace: item.trace,
       assessedAt: new Date(),
+      promptVersion: typeof item.promptVersion === "string" ? item.promptVersion : MATCH_ASSESSMENT_PROMPT_VERSION,
+      agentVersion: typeof item.agentVersion === "string" ? item.agentVersion : MATCH_ASSESSMENT_AGENT_VERSION,
     });
   }
 
   return assessments;
+}
+
+function isRecommendation(value: unknown): value is MatchAssessment["recommendation"] {
+  return value === "推荐" || value === "待定" || value === "不推荐";
 }

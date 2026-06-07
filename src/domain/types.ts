@@ -56,7 +56,28 @@ export type HardRequirementPredicate =
   | { type: "minYearsOfExperience"; value: number }
   | { type: "educationIn"; values: string[] }
   | { type: "keywordAny"; values: string[] }
-  | { type: "industryIn"; values: string[] };
+  | { type: "industryIn"; values: string[] }
+  | { type: "hardConditionRuleSet"; eliminationRules: HardConditionRule[]; passRules: HardConditionRule[] };
+
+export type HardConditionRuleMode = "AND" | "OR";
+export type HardConditionField = "keyword" | "city" | "industry" | "education" | "yearsOfExperience";
+export type HardConditionOperator = "normalizedContainsAny" | "optionAny" | "rankAtLeast" | "min";
+
+export interface HardConditionRule {
+  id: string;
+  label: string;
+  mode: HardConditionRuleMode;
+  conditions: HardConditionRuleCondition[];
+}
+
+export interface HardConditionRuleCondition {
+  field: HardConditionField;
+  operator: HardConditionOperator;
+  values: string[];
+  numericValue?: number;
+  aliases: string[];
+  rank?: number;
+}
 
 export type HardConditionValueType = "text" | "number" | "option";
 export type HardConditionMatchMode = "exact" | "normalizedContains" | "min" | "optionAny" | "rankAtLeast";
@@ -128,19 +149,32 @@ export interface CandidateResume {
 
 export interface MatchAssessment {
   score: number;
-  fitPoints: string[];
+  recommendation: "推荐" | "待定" | "不推荐";
+  recommendationReason: string;
+  matchedPoints: string[];
+  unmatchedPoints: string[];
   riskPoints: string[];
+  trace: string;
   assessedAt: Date;
   jobProfileVersionId?: Identifier;
+  promptVersion: string;
+  agentVersion: string;
 }
+
+export type AIAssessmentAuditAgentType = "job-profile" | "soft-condition" | "match-assessment";
+export type AIAssessmentAuditStatus = "success" | "failure";
 
 export interface AIAssessmentAuditRecord {
   id: Identifier;
   searchRunId: Identifier;
   jobProfileId: Identifier;
   jobProfileVersionId?: Identifier;
+  agentType: AIAssessmentAuditAgentType;
   provider: string;
   model: string;
+  promptVersion: string;
+  agentVersion: string;
+  prompt: string;
   candidateIds: Identifier[];
   inputSnapshot: {
     jobProfile: Pick<JobProfile, "id" | "title" | "searchCondition" | "hardRequirements" | "softRequirements">;
@@ -150,6 +184,10 @@ export interface AIAssessmentAuditRecord {
     candidateId: Identifier;
     assessment: MatchAssessment;
   }>;
+  durationMs: number;
+  status: AIAssessmentAuditStatus;
+  errorType?: string;
+  errorMessage?: string;
   createdAt: Date;
 }
 
@@ -159,6 +197,14 @@ export interface SourceLead {
   searchContext: string;
   fallbackClues: string[];
   expired?: boolean;
+}
+
+export interface ResumeAttachment {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  storagePath: string;
+  uploadedAt: Date;
 }
 
 export interface CandidateResult {
@@ -173,6 +219,7 @@ export interface CandidateResult {
   sourceLead: SourceLead;
   hardRejectReasons: string[];
   matchAssessment?: MatchAssessment;
+  resumeAttachment?: ResumeAttachment;
 }
 
 export interface SearchEvent {

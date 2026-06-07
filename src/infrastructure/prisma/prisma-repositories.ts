@@ -116,6 +116,15 @@ export class PrismaJobProfileVersionRepository implements JobProfileVersionRepos
     return record ? toJobProfileVersionDomain(record as JobProfileVersionPersistenceRecord) : undefined;
   }
 
+  async findByJobProfileId(jobProfileId: string): Promise<JobProfileVersion[]> {
+    const records = await this.prisma.jobProfileVersionRecord.findMany({
+      where: { jobProfileId },
+      orderBy: { version: "asc" },
+    });
+
+    return records.map((record) => toJobProfileVersionDomain(record as JobProfileVersionPersistenceRecord));
+  }
+
   async findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined> {
     const record = await this.prisma.jobProfileVersionRecord.findFirst({
       where: {
@@ -152,6 +161,16 @@ export class PrismaSearchRunRepository implements SearchRunRepository {
     });
 
     return record ? toSearchRunDomain(record as unknown as SearchRunPersistenceRecord) : undefined;
+  }
+
+  async findByJobProfileId(jobProfileId: string): Promise<SearchRun[]> {
+    const records = await this.prisma.searchRunRecord.findMany({
+      where: { jobProfileId },
+      include: searchRunInclude,
+      orderBy: { updatedAt: "asc" },
+    });
+
+    return records.map((record) => toSearchRunDomain(record as unknown as SearchRunPersistenceRecord));
   }
 }
 

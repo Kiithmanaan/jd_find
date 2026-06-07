@@ -10,6 +10,11 @@ export interface AuthTokenPayload {
   exp: number;
 }
 
+export type AuthTokenVerificationResult =
+  | { status: "valid"; payload: AuthTokenPayload }
+  | { status: "expired" }
+  | { status: "invalid" };
+
 export function hashPassword(password: string, salt: string | undefined): string {
   const passwordSalt = salt ?? randomBytes(16).toString("hex");
   const digest = pbkdf2Sync(password, passwordSalt, 120000, 32, "sha256").toString("hex");
@@ -47,25 +52,37 @@ export function signAuthToken(user: User, secret: string, type: AuthTokenType, e
 }
 
 export function verifyAuthToken(token: string, secret: string, expectedType: AuthTokenType): AuthTokenPayload | undefined {
+  const result = verifyAuthTokenResult(token, secret, expectedType);
+  return result.status === "valid" ? result.payload : undefined;
+}
+
+export function verifyAuthTokenResult(
+  token: string,
+  secret: string,
+  expectedType: AuthTokenType,
+): AuthTokenVerificationResult {
   const [header, body, signature] = token.split(".");
   if (!header || !body || !signature) {
-    return undefined;
+    return { status: "invalid" };
   }
 
   const expectedSignature = sign(`${header}.${body}`, secret);
   if (!safeEqual(signature, expectedSignature)) {
-    return undefined;
+    return { status: "invalid" };
   }
 
   const payload = parseAuthTokenPayload(body);
   if (!payload) {
-    return undefined;
+    return { status: "invalid" };
   }
-  if (payload.type !== expectedType || payload.exp < Math.floor(Date.now() / 1000)) {
-    return undefined;
+  if (payload.type !== expectedType) {
+    return { status: "invalid" };
+  }
+  if (payload.exp < Math.floor(Date.now() / 1000)) {
+    return { status: "expired" };
   }
 
-  return payload;
+  return { status: "valid", payload };
 }
 
 function sign(value: string, secret: string): string {

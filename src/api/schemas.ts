@@ -30,9 +30,46 @@ const hardRequirementPredicateSchema = z.discriminatedUnion("type", [
     type: z.literal("industryIn"),
     values: stringList.min(1),
   }),
+  z.object({
+    type: z.literal("hardConditionRuleSet"),
+    eliminationRules: z.array(
+      z.object({
+        id: nonEmptyString,
+        label: nonEmptyString,
+        mode: z.enum(["AND", "OR"]),
+        conditions: z.array(
+          z.object({
+            field: z.enum(["keyword", "city", "industry", "education", "yearsOfExperience"]),
+            operator: z.enum(["normalizedContainsAny", "optionAny", "rankAtLeast", "min"]),
+            values: stringList,
+            numericValue: z.number().min(0).optional(),
+            aliases: stringList,
+            rank: z.number().int().min(1).optional(),
+          }),
+        ).min(1),
+      }),
+    ),
+    passRules: z.array(
+      z.object({
+        id: nonEmptyString,
+        label: nonEmptyString,
+        mode: z.enum(["AND", "OR"]),
+        conditions: z.array(
+          z.object({
+            field: z.enum(["keyword", "city", "industry", "education", "yearsOfExperience"]),
+            operator: z.enum(["normalizedContainsAny", "optionAny", "rankAtLeast", "min"]),
+            values: stringList,
+            numericValue: z.number().min(0).optional(),
+            aliases: stringList,
+            rank: z.number().int().min(1).optional(),
+          }),
+        ).min(1),
+      }),
+    ).min(1),
+  }),
 ]);
 
-const searchConditionSchema = z.object({
+export const searchConditionSchema = z.object({
   keywords: stringList.min(1),
   cities: stringList,
   industries: stringList,
@@ -40,21 +77,21 @@ const searchConditionSchema = z.object({
   minYearsOfExperience: z.number().int().min(0).optional(),
 });
 
-const hardRequirementSchema = z.object({
+export const hardRequirementSchema = z.object({
   key: nonEmptyString,
   label: nonEmptyString,
   weight: z.number().min(0),
   predicate: hardRequirementPredicateSchema,
 });
 
-const softRequirementSchema = z.object({
+export const softRequirementSchema = z.object({
   key: nonEmptyString,
   label: nonEmptyString,
   weight: z.number().min(0),
   description: nonEmptyString,
 });
 
-const jobProfileSchema = z.object({
+export const jobProfileSchema = z.object({
   id: nonEmptyString,
   createdByUserId: nonEmptyString.optional(),
   title: nonEmptyString,
@@ -139,6 +176,24 @@ export const pluginCandidateSubmissionSchema = z.object({
   batchId: nonEmptyString.optional(),
   sourcePlatform: nonEmptyString.optional(),
   candidates: z.array(candidateDraftSchema).min(1),
+});
+
+export const resumeAttachmentUploadSchema = z.object({
+  filename: nonEmptyString,
+  contentType: z.enum([
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]),
+  contentBase64: nonEmptyString,
+});
+
+export const jobProfileVersionDraftRequestSchema = z.object({
+  title: nonEmptyString,
+  jdText: nonEmptyString,
+  searchCondition: searchConditionSchema,
+  hardRequirements: z.array(hardRequirementSchema).min(1),
+  softRequirements: z.array(softRequirementSchema).min(1),
 });
 
 export function formatZodError(error: z.ZodError): Array<{ path: string; message: string }> {

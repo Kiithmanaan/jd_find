@@ -70,6 +70,13 @@ export class InMemoryJobProfileVersionRepository implements JobProfileVersionRep
     return record ? structuredClone(record) : undefined;
   }
 
+  async findByJobProfileId(jobProfileId: string): Promise<JobProfileVersion[]> {
+    return [...this.records.values()]
+      .filter((record) => record.jobProfileId === jobProfileId)
+      .sort((left, right) => left.version - right.version)
+      .map((record) => structuredClone(record));
+  }
+
   async findLatestConfirmedByJobProfileId(jobProfileId: string): Promise<JobProfileVersion | undefined> {
     const versions = [...this.records.values()]
       .filter((record) => record.jobProfileId === jobProfileId && record.status === "Confirmed")
@@ -96,6 +103,13 @@ export class InMemorySearchRunRepository implements SearchRunRepository {
   async findById(id: string): Promise<SearchRun | undefined> {
     const record = this.records.get(id);
     return record ? structuredClone(record) : undefined;
+  }
+
+  async findByJobProfileId(jobProfileId: string): Promise<SearchRun[]> {
+    return [...this.records.values()]
+      .filter((record) => record.jobProfileId === jobProfileId)
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .map((record) => structuredClone(record));
   }
 
   findHistoryById(id: string): SearchRun[] {

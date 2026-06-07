@@ -121,6 +121,42 @@ paths:
                 $ref: "#/components/schemas/SearchRun"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
+  /search-runs/{id}/cancel:
+    post:
+      summary: 取消 SearchRun
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 已取消
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchRun"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+        "409":
+          $ref: "#/components/responses/DomainError"
+  /search-runs/{id}/candidates/{candidateId}/resume-attachment:
+    get:
+      summary: 下载候选人简历附件
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+        - $ref: "#/components/parameters/CandidateId"
+      responses:
+        "200":
+          description: 简历附件二进制内容
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
   /search-runs/{id}/ai-assessment-audits:
     get:
       summary: 查询 SearchRun 的 AI 审计
@@ -143,10 +179,125 @@ paths:
                       $ref: "#/components/schemas/AIAssessmentAudit"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
+  /job-profiles/{id}/versions:
+    get:
+      summary: 查询 JobProfile 版本历史
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 版本历史
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, versions]
+                properties:
+                  jobProfileId:
+                    type: string
+                  currentVersionId:
+                    type: string
+                  versions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/JobProfileVersion"
+  /job-profiles/{id}/versions/draft:
+    post:
+      summary: 创建 JobProfile 草稿版本
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobProfileVersionDraftRequest"
+      responses:
+        "201":
+          description: 草稿版本
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobProfileVersion"
+  /job-profiles/{id}/versions/{versionId}/confirm:
+    post:
+      summary: 确认 JobProfile 版本
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 已确认
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfile, version]
+                properties:
+                  jobProfile:
+                    $ref: "#/components/schemas/JobProfile"
+                  version:
+                    $ref: "#/components/schemas/JobProfileVersion"
+  /job-profiles/{id}/candidates:
+    get:
+      summary: 查询同一 JobProfile 跨 SearchRun 去重后的候选人汇总
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 候选人汇总
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, jobProfileVersionId, currentVersionCandidates, staleVersionCandidates]
+                properties:
+                  jobProfileId:
+                    type: string
+                  jobProfileVersionId:
+                    type: string
+                  currentVersionCandidates:
+                    type: array
+                    items:
+                      type: object
+                  staleVersionCandidates:
+                    type: array
+                    items:
+                      type: object
+  /job-profiles/{id}/reassess-candidates:
+    post:
+      summary: 手动批量重新评估同一 JobProfile 的历史候选人
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "202":
+          description: 已触发并完成重新评估
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, jobProfileVersionId, reassessedCount, hardRejectedCount, affectedSearchRunIds]
+                properties:
+                  jobProfileId:
+                    type: string
+                  jobProfileVersionId:
+                    type: string
+                  reassessedCount:
+                    type: integer
+                  hardRejectedCount:
+                    type: integer
+                  affectedSearchRunIds:
+                    type: array
+                    items:
+                      type: string
   /plugin/search-runs/{id}/candidates:
     post:
       summary: 插件提交候选人
-      description: 第一阶段基础实现可同步处理；目标状态为快速返回已接收并后台聚合。
+      description: 快速返回已接收；后台按 30 秒窗口聚合，单 SearchRun 缓冲满 20 条立即触发评估。
       parameters:
         - $ref: "#/components/parameters/SearchRunId"
       requestBody:
@@ -188,6 +339,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /plugin/search-runs/{id}/candidates/{candidateId}/resume-attachment:
+    post:
+      summary: 插件上传候选人简历附件
+      description: 第一阶段使用 JSON base64 传输；本地存储按 SearchRun 分目录；重复上传覆盖候选人当前附件。
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+        - $ref: "#/components/parameters/CandidateId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeAttachmentUpload"
+      responses:
+        "200":
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, candidateId, filename, contentType, sizeBytes, downloadUrl]
+                properties:
+                  searchRunId:
+                    type: string
+                  candidateId:
+                    type: string
+                  filename:
+                    type: string
+                  contentType:
+                    type: string
+                  sizeBytes:
+                    type: integer
+                  downloadUrl:
+                    type: string
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+        "413":
+          $ref: "#/components/responses/DomainError"
 components:
   securitySchemes:
     bearerAuth:
@@ -196,6 +389,18 @@ components:
   parameters:
     SearchRunId:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    JobProfileId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    CandidateId:
+      name: candidateId
       in: path
       required: true
       schema:
@@ -294,6 +499,57 @@ components:
         confirmedAt:
           type: string
           format: date-time
+    JobProfileVersion:
+      type: object
+      required: [id, jobProfileId, version, title, jdText, searchCondition, hardRequirements, softRequirements, status, createdAt]
+      properties:
+        id:
+          type: string
+        jobProfileId:
+          type: string
+        version:
+          type: integer
+        title:
+          type: string
+        jdText:
+          type: string
+        searchCondition:
+          type: object
+        hardRequirements:
+          type: array
+          items:
+            type: object
+        softRequirements:
+          type: array
+          items:
+            type: object
+        status:
+          type: string
+          enum: [Draft, Confirmed]
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+    JobProfileVersionDraftRequest:
+      type: object
+      required: [title, jdText, searchCondition, hardRequirements, softRequirements]
+      properties:
+        title:
+          type: string
+        jdText:
+          type: string
+        searchCondition:
+          type: object
+        hardRequirements:
+          type: array
+          items:
+            type: object
+        softRequirements:
+          type: array
+          items:
+            type: object
     CandidateDraft:
       type: object
       required: [fingerprint, resume, intent, activityLevel, sourceLead]
@@ -432,6 +688,20 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/CandidateDraft"
+    ResumeAttachmentUpload:
+      type: object
+      required: [filename, contentType, contentBase64]
+      properties:
+        filename:
+          type: string
+        contentType:
+          type: string
+          enum:
+            - application/pdf
+            - application/msword
+            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        contentBase64:
+          type: string
     SearchRunStatus:
       type: string
       enum: [Created, Running, Acquired, Deduplicated, HardFiltered, Assessed, Completed, Interrupted, Failed, Cancelled]
@@ -492,7 +762,7 @@ components:
             type: object
     AIAssessmentAudit:
       type: object
-      required: [id, searchRunId, jobProfileId, provider, model, candidateIds, inputSnapshot, outputSnapshot, createdAt]
+      required: [id, searchRunId, jobProfileId, agentType, provider, model, promptVersion, agentVersion, prompt, candidateIds, inputSnapshot, outputSnapshot, durationMs, status, createdAt]
       properties:
         id:
           type: string
@@ -502,9 +772,18 @@ components:
           type: string
         jobProfileVersionId:
           type: string
+        agentType:
+          type: string
+          enum: [job-profile, soft-condition, match-assessment]
         provider:
           type: string
         model:
+          type: string
+        promptVersion:
+          type: string
+        agentVersion:
+          type: string
+        prompt:
           type: string
         candidateIds:
           type: array
@@ -516,6 +795,15 @@ components:
           type: array
           items:
             type: object
+        durationMs:
+          type: integer
+        status:
+          type: string
+          enum: [success, failure]
+        errorType:
+          type: string
+        errorMessage:
+          type: string
         createdAt:
           type: string
           format: date-time

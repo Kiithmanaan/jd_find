@@ -114,11 +114,19 @@ model AIAssessmentAuditRecord {
   searchRunId    String
   jobProfileId   String
   jobProfileVersionId String?
+  agentType      String          @default("match-assessment")
   provider       String
   model          String
+  promptVersion  String          @default("match-assessment-v1")
+  agentVersion   String          @default("jd-match-assessment-v1")
+  prompt         String          @default("")
   candidateIds   Json
   inputSnapshot  Json
   outputSnapshot Json
+  durationMs     Int             @default(0)
+  status         String          @default("success")
+  errorType      String?
+  errorMessage   String?
   createdAt      DateTime
   searchRun      SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
 
@@ -140,6 +148,7 @@ model CandidateResultRecord {
   sourceLead        Json
   hardRejectReasons Json
   matchAssessment   Json?
+  resumeAttachment  Json?
   searchRun         SearchRunRecord       @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
 
   @@index([jobProfileId])

@@ -9,7 +9,11 @@ import {
   interruptSearchRun,
   startSearchRun,
 } from "../domain/search-run.js";
-import { normalizeAIAssessments } from "../domain/ai-assessment-contract.js";
+import {
+  MATCH_ASSESSMENT_AGENT_VERSION,
+  MATCH_ASSESSMENT_PROMPT_VERSION,
+  normalizeAIAssessments,
+} from "../domain/ai-assessment-contract.js";
 import { createConfirmedJobProfileVersion, createDefaultJobProfileVersionId } from "../domain/job-profile.js";
 import type { JobProfile, MatchAssessment, SearchRun } from "../domain/types.js";
 import type {
@@ -71,11 +75,32 @@ export class SearchOrchestrator {
       const hardPassedCandidates = searchRun.candidates.filter(
         (candidate) => candidate.status === "HardPassed",
       );
-      const assessments = normalizeAIAssessments(
-        hardPassedCandidates,
-        await this.dependencies.aiAssessment.assessCandidates(runnableJobProfile, hardPassedCandidates),
-      );
-      await this.recordAIAssessmentAudit(searchRun, runnableJobProfile, hardPassedCandidates, assessments);
+      const assessmentStartedAt = Date.now();
+      let assessments: Map<string, MatchAssessment>;
+      try {
+        assessments = normalizeAIAssessments(
+          hardPassedCandidates,
+          await this.dependencies.aiAssessment.assessCandidates(runnableJobProfile, hardPassedCandidates),
+        );
+        await this.recordAIAssessmentAudit(
+          searchRun,
+          runnableJobProfile,
+          hardPassedCandidates,
+          assessments,
+          Date.now() - assessmentStartedAt,
+          undefined,
+        );
+      } catch (error) {
+        await this.recordAIAssessmentAudit(
+          searchRun,
+          runnableJobProfile,
+          hardPassedCandidates,
+          new Map(),
+          Date.now() - assessmentStartedAt,
+          error,
+        );
+        throw error;
+      }
 
       searchRun = applySoftAssessments(searchRun, assessments);
       searchRun = await this.saveSearchRun(searchRun);
@@ -100,18 +125,25 @@ export class SearchOrchestrator {
     jobProfile: JobProfile,
     candidates: SearchRun["candidates"],
     assessments: Map<string, MatchAssessment>,
+    durationMs: number,
+    error: unknown | undefined,
   ): Promise<void> {
     if (!this.dependencies.aiAssessmentAudit || candidates.length === 0) {
       return;
     }
 
+    const prompt = createMatchAssessmentPrompt(jobProfile, candidates);
     await this.dependencies.aiAssessmentAudit.record({
       id: this.dependencies.auditIdGenerator?.() ?? crypto.randomUUID(),
       searchRunId: searchRun.id,
       jobProfileId: jobProfile.id,
       jobProfileVersionId: searchRun.jobProfileVersionId,
+      agentType: "match-assessment",
       provider: this.dependencies.aiAssessment.providerName ?? "unknown",
       model: this.dependencies.aiAssessment.modelName ?? "unknown",
+      promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
+      agentVersion: MATCH_ASSESSMENT_AGENT_VERSION,
+      prompt,
       candidateIds: candidates.map((candidate) => candidate.id),
       inputSnapshot: {
         jobProfile: {
@@ -131,6 +163,10 @@ export class SearchOrchestrator {
         candidateId,
         assessment,
       })),
+      durationMs,
+      status: error ? "failure" : "success",
+      errorType: error instanceof Error ? error.name : error ? "UnknownError" : undefined,
+      errorMessage: error instanceof Error ? error.message : error ? "Unknown AI assessment error." : undefined,
       createdAt: new Date(),
     });
   }
@@ -153,4 +189,17 @@ function normalizeConfirmedJobProfileVersion(jobProfile: JobProfile): JobProfile
     ...jobProfile,
     currentVersionId: createDefaultJobProfileVersionId(jobProfile.id),
   };
+}
+
+function createMatchAssessmentPrompt(jobProfile: JobProfile, candidates: SearchRun["candidates"]): string {
+  return JSON.stringify({
+    task: "match-assessment",
+    jobProfileVersionId: jobProfile.currentVersionId,
+    jobProfile: {
+      title: jobProfile.title,
+      hardRequirements: jobProfile.hardRequirements,
+      softRequirements: jobProfile.softRequirements,
+    },
+    candidateIds: candidates.map((candidate) => candidate.id),
+  });
 }

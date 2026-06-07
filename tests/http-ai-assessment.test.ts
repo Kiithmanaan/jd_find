@@ -17,13 +17,18 @@ test("parseHttpAIAssessmentResponse maps assessments array", () => {
       {
         candidateId: "candidate-1",
         score: 88,
-        fitPoints: ["匹配岗位画像"],
+        recommendation: "推荐",
+        recommendationReason: "匹配岗位画像。",
+        matchedPoints: ["匹配岗位画像"],
+        unmatchedPoints: [],
         riskPoints: ["需要人工确认"],
+        trace: "根据摘要匹配。",
       },
     ],
   });
 
   assert.equal(parsed.get("candidate-1")?.score, 88);
+  assert.equal(parsed.get("candidate-1")?.recommendation, "推荐");
 });
 
 test("parseHttpAIAssessmentResponse rejects invalid response shape", () => {
@@ -31,7 +36,18 @@ test("parseHttpAIAssessmentResponse rejects invalid response shape", () => {
   assert.throws(
     () =>
       parseHttpAIAssessmentResponse({
-        assessments: [{ candidateId: "candidate-1", score: "88", fitPoints: [], riskPoints: [] }],
+        assessments: [
+          {
+            candidateId: "candidate-1",
+            score: "88",
+            recommendation: "推荐",
+            recommendationReason: "匹配。",
+            matchedPoints: [],
+            unmatchedPoints: [],
+            riskPoints: [],
+            trace: "trace",
+          },
+        ],
       }),
     DomainError,
   );
@@ -52,8 +68,12 @@ test("HttpAIAssessment posts job profile and candidates to endpoint", async () =
           {
             candidateId: "http-run-candidate-1",
             score: 86,
-            fitPoints: ["具备客户理解能力"],
+            recommendation: "推荐",
+            recommendationReason: "具备客户理解能力。",
+            matchedPoints: ["具备客户理解能力"],
+            unmatchedPoints: [],
             riskPoints: ["需要人工确认意向"],
+            trace: "候选人摘要命中客户理解能力。",
           },
         ],
       }),
@@ -90,6 +110,7 @@ test("HttpAIAssessment posts job profile and candidates to endpoint", async () =
   assert.equal((requestBody as { jobProfile: { id: string } }).jobProfile.id, "job-1");
   assert.equal((requestBody as { candidates: unknown[] }).candidates.length, 1);
   assert.equal(assessments.get("http-run-candidate-1")?.score, 86);
+  assert.equal(assessments.get("http-run-candidate-1")?.recommendation, "推荐");
 });
 
 test("HttpAIAssessment turns non-2xx responses into DomainError", async () => {

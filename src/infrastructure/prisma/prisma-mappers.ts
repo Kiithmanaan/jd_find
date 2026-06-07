@@ -71,6 +71,7 @@ export type CandidateResultPersistenceRecord = {
   sourceLead: Prisma.JsonValue;
   hardRejectReasons: Prisma.JsonValue;
   matchAssessment: Prisma.JsonValue | null;
+  resumeAttachment: Prisma.JsonValue | null;
 };
 
 export type SearchEventPersistenceRecord = {
@@ -296,8 +297,20 @@ function toCandidateResultDomain(record: CandidateResultPersistenceRecord): Cand
     activityLevel: record.activityLevel,
     sourceLead: record.sourceLead as unknown as CandidateResult["sourceLead"],
     hardRejectReasons: record.hardRejectReasons as unknown as string[],
-    matchAssessment:
-      (record.matchAssessment as unknown as CandidateResult["matchAssessment"] | null) ?? undefined,
+    matchAssessment: reviveMatchAssessment(record.matchAssessment),
+    resumeAttachment: reviveResumeAttachment(record.resumeAttachment),
+  };
+}
+
+function reviveMatchAssessment(value: Prisma.JsonValue | null): CandidateResult["matchAssessment"] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const assessment = value as unknown as NonNullable<CandidateResult["matchAssessment"]>;
+  return {
+    ...assessment,
+    assessedAt: new Date(assessment.assessedAt),
   };
 }
 
@@ -315,6 +328,19 @@ function toCandidateResultCreateWithoutSearchRunInput(
     sourceLead: toJsonInput(candidate.sourceLead),
     hardRejectReasons: toJsonInput(candidate.hardRejectReasons),
     matchAssessment: candidate.matchAssessment ? toJsonInput(candidate.matchAssessment) : undefined,
+    resumeAttachment: candidate.resumeAttachment ? toJsonInput(candidate.resumeAttachment) : undefined,
+  };
+}
+
+function reviveResumeAttachment(value: Prisma.JsonValue | null): CandidateResult["resumeAttachment"] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const attachment = value as unknown as NonNullable<CandidateResult["resumeAttachment"]>;
+  return {
+    ...attachment,
+    uploadedAt: new Date(attachment.uploadedAt),
   };
 }
 

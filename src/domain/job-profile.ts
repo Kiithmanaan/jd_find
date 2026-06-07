@@ -53,3 +53,55 @@ export function createConfirmedJobProfileVersion(jobProfile: JobProfile): JobPro
     confirmedAt: jobProfile.confirmedAt ?? new Date(),
   };
 }
+
+export function createDraftJobProfileVersion(
+  jobProfile: JobProfile,
+  id: string,
+  version: number,
+): JobProfileVersion {
+  if (version < 1) {
+    throw new DomainError("Job profile version number must be positive.");
+  }
+
+  return {
+    id,
+    jobProfileId: jobProfile.id,
+    version,
+    title: jobProfile.title,
+    jdText: jobProfile.jdText,
+    searchCondition: jobProfile.searchCondition,
+    hardRequirements: jobProfile.hardRequirements,
+    softRequirements: jobProfile.softRequirements,
+    status: "Draft",
+    createdAt: new Date(),
+  };
+}
+
+export function confirmJobProfileVersion(
+  jobProfile: JobProfile,
+  version: JobProfileVersion,
+): { jobProfile: JobProfile; version: JobProfileVersion } {
+  if (version.jobProfileId !== jobProfile.id) {
+    throw new DomainError("Job profile version does not belong to the job profile.");
+  }
+
+  const confirmedAt = new Date();
+  return {
+    jobProfile: {
+      ...jobProfile,
+      title: version.title,
+      jdText: version.jdText,
+      status: "Confirmed",
+      currentVersionId: version.id,
+      searchCondition: version.searchCondition,
+      hardRequirements: version.hardRequirements,
+      softRequirements: version.softRequirements,
+      confirmedAt,
+    },
+    version: {
+      ...version,
+      status: "Confirmed",
+      confirmedAt,
+    },
+  };
+}

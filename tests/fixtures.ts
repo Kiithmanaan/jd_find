@@ -1,4 +1,22 @@
-import type { CandidateDraft, JobProfile } from "../src/domain/types.js";
+import type { CandidateDraft, JobProfile, MatchAssessment } from "../src/domain/types.js";
+import {
+  MATCH_ASSESSMENT_AGENT_VERSION,
+  MATCH_ASSESSMENT_PROMPT_VERSION,
+} from "../src/domain/ai-assessment-contract.js";
+
+interface MatchAssessmentOverrides {
+  score?: number;
+  recommendation?: MatchAssessment["recommendation"];
+  recommendationReason?: string;
+  matchedPoints?: string[];
+  unmatchedPoints?: string[];
+  riskPoints?: string[];
+  trace?: string;
+  assessedAt?: Date;
+  jobProfileVersionId?: string;
+  promptVersion?: string;
+  agentVersion?: string;
+}
 
 export function createConfirmedJobProfile(): JobProfile {
   return {
@@ -147,4 +165,20 @@ export function createCandidateDrafts(): CandidateDraft[] {
       },
     },
   ];
+}
+
+export function createMatchAssessment(overrides: MatchAssessmentOverrides): MatchAssessment {
+  return {
+    score: 90,
+    recommendation: "推荐",
+    recommendationReason: "候选人与岗位画像匹配度较高。",
+    matchedPoints: ["具备复杂项目推动相关经历"],
+    unmatchedPoints: [],
+    riskPoints: [],
+    trace: "根据岗位画像和候选人摘要生成推荐结论。",
+    assessedAt: new Date("2026-06-04T00:00:00.000Z"),
+    promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
+    agentVersion: MATCH_ASSESSMENT_AGENT_VERSION,
+    ...overrides,
+  };
 }
