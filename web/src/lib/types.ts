@@ -1,6 +1,17 @@
 export type JobProfileStatus = "Draft" | "Confirmed";
-export type SearchRunStatus = "WaitingPlugin" | "Running" | "Completed" | "Cancelled";
-export type CandidateStatus = "Pending" | "Displayable" | "HardRejected";
+
+export type SearchRunStatus =
+  | "Created"
+  | "Running"
+  | "Acquired"
+  | "Deduplicated"
+  | "HardFiltered"
+  | "Assessed"
+  | "Completed"
+  | "Failed"
+  | "Cancelled";
+
+export type CandidateStatus = "Pending" | "Acquired" | "Deduplicated" | "HardPassed" | "HardRejected" | "Assessed" | "Displayable";
 export type Recommendation = "推荐" | "待定" | "不推荐";
 
 export interface SearchCondition {
@@ -23,7 +34,6 @@ export interface JobProfile {
   searchCondition: SearchCondition;
   hardRequirements: string[];
   softRequirements: string;
-  prompt: string;
 }
 
 export interface ProfileForm {
@@ -65,18 +75,41 @@ export interface Candidate {
   matchAssessment?: MatchAssessment;
   hardRejectReasons: string[];
   hasAttachment: boolean;
+  resumeAttachment?: ResumeAttachment;
   assessedVersion: number;
+}
+
+export interface SearchEvent {
+  type: string;
+  occurredAt: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SearchRun {
   id: string;
   jobProfileId: string;
+  jobProfileTitle: string;
   status: SearchRunStatus;
   targetResultCount: number;
   rawSubmittedCount: number;
   createdAt: string;
-  pluginInstruction: string;
-  reason?: string;
+  updatedAt: string;
+  candidates: Candidate[];
+  failureReason?: string;
+  events: SearchEvent[];
+  searchRunUrl: string;
+}
+
+export interface CreateSearchRunRequest {
+  jobProfile: JobProfile;
+  targetResultCount: number;
+}
+
+export interface CreateSearchRunResponse {
+  searchRunId: string;
+  status: SearchRunStatus;
+  statusUrl: string;
 }
 
 export interface AIAudit {
@@ -97,4 +130,56 @@ export interface CandidateSummary {
   jobProfileVersionId: string;
   currentVersionCandidates: Candidate[];
   staleVersionCandidates: Candidate[];
+}
+// ─── JobProfile 版本 ──────────────────────────────────────────────
+
+export interface ResumeAttachment {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  receivedAt: string;
+}
+
+export interface JobProfileVersion {
+  id: string;
+  jobProfileId: string;
+  version: number;
+  title: string;
+  jdText: string;
+  searchCondition: SearchCondition;
+  hardRequirements: string[];
+  softRequirements: string;
+  status: "Draft" | "Confirmed";
+  createdAt: string;
+  confirmedAt?: string;
+}
+
+// ─── 硬筛配置 ──────────────────────────────────────────────────────
+
+export interface HardConditionDimension {
+  id: string;
+  key: string;
+  label: string;
+  valueType: "text" | "number" | "option";
+  supportedMatchModes: string[];
+  allowMultiple: boolean;
+  createdAt: string;
+}
+
+export interface HardConditionOption {
+  id: string;
+  dimensionKey: string;
+  value: string;
+  label: string;
+  aliases: string[];
+  rank?: number;
+  createdAt: string;
+}
+
+export interface HardConditionConfigDimension extends HardConditionDimension {
+  options: HardConditionOption[];
+}
+
+export interface HardConditionConfigResponse {
+  dimensions: HardConditionConfigDimension[];
 }

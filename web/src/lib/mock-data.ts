@@ -1,14 +1,48 @@
-import type { AIAudit, Candidate, CandidateSummary, JobProfile, SearchRun } from "./types.js";
+import type {
+  AIAudit,
+  Candidate,
+  CandidateSummary,
+  CreateSearchRunResponse,
+  JobProfile,
+  SearchRun,
+  SearchRunStatus,
+} from "./types.js";
 
-export const initialSearchRun: SearchRun = {
-  id: "run-20260608-001",
-  jobProfileId: "job-001",
-  status: "WaitingPlugin",
-  targetResultCount: 200,
-  rawSubmittedCount: 0,
-  createdAt: "2026-06-08 11:00",
-  pluginInstruction: "复制 SearchRun ID 到浏览器插件项目；插件项目负责登录、采集和候选人提交。",
-};
+let mockSearchRunCounter = 0;
+
+export function createMockSearchRun(jobProfile: JobProfile, targetResultCount: number): CreateSearchRunResponse {
+  mockSearchRunCounter += 1;
+  const searchRunId = `mock-run-${Date.now().toString(36)}-${mockSearchRunCounter}`;
+
+  return {
+    searchRunId,
+    status: "Running",
+    statusUrl: `/api/search-runs/${searchRunId}`,
+  };
+}
+
+export function buildMockSearchRun(
+  id: string,
+  jobProfile: JobProfile,
+  targetResultCount: number,
+  candidates: Candidate[],
+  status: SearchRunStatus = "Running",
+): SearchRun {
+  const now = new Date().toISOString();
+  return {
+    id,
+    jobProfileId: jobProfile.id,
+    jobProfileTitle: jobProfile.title,
+    status,
+    targetResultCount,
+    rawSubmittedCount: candidates.length,
+    createdAt: now,
+    updatedAt: now,
+    events: [],
+    candidates,
+    searchRunUrl: `/search-runs/${id}`,
+  };
+}
 
 export const mockAudit: AIAudit = {
   id: "audit-001",
@@ -50,29 +84,46 @@ export const baseProfile: JobProfile = {
   },
   hardRequirements: ["5 年以上经验", "本科及以上", "企业服务行业", "关键词包含解决方案或客户成功"],
   softRequirements: "复杂项目推动能力；客户业务理解能力；跨团队沟通能力。",
-  prompt: "根据当前 confirmed version 的硬性条件和软性条件评估候选人。",
 };
 
-export const mockProfiles: JobProfile[] = [
-  baseProfile,
-  {
-    ...baseProfile,
-    id: "job-002",
-    title: "客户成功负责人",
-    version: 1,
-    updatedAt: "2026-06-07 16:20",
-    searchRunCount: 0,
-    searchCondition: {
-      keywords: "客户成功, 续费",
-      cities: "北京, 上海",
-      industries: "SaaS",
-      educationLevels: "本科",
-      minYearsOfExperience: 6,
-    },
-    hardRequirements: ["6 年以上经验", "本科及以上", "SaaS 行业"],
-    softRequirements: "续费增长；团队管理；关键客户经营。",
+const baseProfile2: JobProfile = {
+  ...baseProfile,
+  id: "job-002",
+  title: "客户成功负责人",
+  version: 1,
+  updatedAt: "2026-06-07 16:20",
+  searchRunCount: 0,
+  searchCondition: {
+    keywords: "客户成功, 续费",
+    cities: "北京, 上海",
+    industries: "SaaS",
+    educationLevels: "本科",
+    minYearsOfExperience: 6,
   },
-];
+  hardRequirements: ["6 年以上经验", "本科及以上", "SaaS 行业"],
+  softRequirements: "续费增长；团队管理；关键客户经营。",
+};
+
+export const draftProfile: JobProfile = {
+  ...baseProfile,
+  id: "job-003",
+  title: "高级 DevOps 工程师",
+  version: 1,
+  status: "Draft",
+  updatedAt: "2026-06-08 14:00",
+  searchRunCount: 0,
+  searchCondition: {
+    keywords: "Kubernetes, CI/CD",
+    cities: "上海, 杭州",
+    industries: "云计算",
+    educationLevels: "本科",
+    minYearsOfExperience: 3,
+  },
+  hardRequirements: ["3 年以上 DevOps 经验", "本科及以上"],
+  softRequirements: "K8s 生产实践经验；CI/CD 工具链搭建能力。",
+};
+
+export const mockProfiles: JobProfile[] = [baseProfile, baseProfile2, draftProfile];
 
 export const mockCandidates: Candidate[] = [
   {
@@ -100,6 +151,12 @@ export const mockCandidates: Candidate[] = [
     },
     hardRejectReasons: [],
     hasAttachment: true,
+    resumeAttachment: {
+      filename: "chen_ming_resume.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 245760,
+      receivedAt: "2026-06-08T11:00:00.000Z",
+    },
     assessedVersion: 3,
   },
   {
@@ -148,6 +205,127 @@ export const mockCandidates: Candidate[] = [
     assessedVersion: 2,
   },
 ];
+
+
+// ─── 硬筛配置 mock ─────────────────────────────────────────────────
+
+export const mockHardConditionConfig = {
+  dimensions: [
+    {
+      id: "hard-dimension-keyword",
+      key: "keyword",
+      label: "全文关键词",
+      valueType: "text" as const,
+      supportedMatchModes: ["exact", "normalizedContains"],
+      allowMultiple: true,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      options: [],
+    },
+    {
+      id: "hard-dimension-city",
+      key: "city",
+      label: "城市",
+      valueType: "option" as const,
+      supportedMatchModes: ["optionAny"],
+      allowMultiple: true,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      options: [],
+    },
+    {
+      id: "hard-dimension-industry",
+      key: "industry",
+      label: "行业",
+      valueType: "option" as const,
+      supportedMatchModes: ["optionAny"],
+      allowMultiple: true,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      options: [],
+    },
+    {
+      id: "hard-dimension-education",
+      key: "education",
+      label: "学历",
+      valueType: "option" as const,
+      supportedMatchModes: ["rankAtLeast"],
+      allowMultiple: false,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      options: [
+        { id: "hard-option-education-college", dimensionKey: "education", value: "大专", label: "大专", aliases: ["专科"], rank: 1, createdAt: "2026-06-06T00:00:00.000Z" },
+        { id: "hard-option-education-bachelor", dimensionKey: "education", value: "本科", label: "本科", aliases: ["学士"], rank: 2, createdAt: "2026-06-06T00:00:00.000Z" },
+        { id: "hard-option-education-master", dimensionKey: "education", value: "硕士", label: "硕士", aliases: ["研究生"], rank: 3, createdAt: "2026-06-06T00:00:00.000Z" },
+        { id: "hard-option-education-doctor", dimensionKey: "education", value: "博士", label: "博士", aliases: ["博士研究生"], rank: 4, createdAt: "2026-06-06T00:00:00.000Z" },
+      ],
+    },
+    {
+      id: "hard-dimension-years",
+      key: "yearsOfExperience",
+      label: "最低工作年限",
+      valueType: "number" as const,
+      supportedMatchModes: ["min"],
+      allowMultiple: false,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      options: [],
+    },
+  ],
+};
+
+export const mockProfileVersions: Record<string, import("./types.js").JobProfileVersion[]> = {
+  "job-001": [
+    {
+      id: "job-001-v1",
+      jobProfileId: "job-001",
+      version: 1,
+      title: "高级解决方案顾问",
+      jdText: "负责企业服务客户的解决方案设计。",
+      searchCondition: { keywords: "解决方案, 企业服务", cities: "上海", industries: "企业服务", educationLevels: "本科", minYearsOfExperience: 3 },
+      hardRequirements: ["3 年以上经验", "本科及以上"],
+      softRequirements: "项目推动能力",
+      status: "Draft",
+      createdAt: "2026-06-01T10:00:00.000Z",
+    },
+    {
+      id: "job-001-v2",
+      jobProfileId: "job-001",
+      version: 2,
+      title: "高级解决方案顾问",
+      jdText: "负责企业服务客户的解决方案设计、复杂项目推动和客户成功协作。",
+      searchCondition: { keywords: "解决方案, 客户成功, 企业服务", cities: "上海", industries: "企业服务", educationLevels: "本科, 硕士", minYearsOfExperience: 5 },
+      hardRequirements: ["5 年以上经验", "本科及以上", "企业服务行业"],
+      softRequirements: "复杂项目推动能力；客户业务理解能力；跨团队沟通能力。",
+      status: "Confirmed",
+      createdAt: "2026-06-03T14:00:00.000Z",
+      confirmedAt: "2026-06-03T14:00:00.000Z",
+    },
+    {
+      id: "job-001-v3",
+      jobProfileId: "job-001",
+      version: 3,
+      title: "高级解决方案顾问",
+      jdText: baseProfile.jdText,
+      searchCondition: baseProfile.searchCondition,
+      hardRequirements: baseProfile.hardRequirements,
+      softRequirements: baseProfile.softRequirements,
+      status: "Confirmed",
+      createdAt: "2026-06-06T09:00:00.000Z",
+      confirmedAt: "2026-06-06T09:00:00.000Z",
+    },
+  ],
+  "job-002": [
+    {
+      id: "job-002-v1",
+      jobProfileId: "job-002",
+      version: 1,
+      title: baseProfile2.title,
+      jdText: baseProfile2.jdText,
+      searchCondition: baseProfile2.searchCondition,
+      hardRequirements: baseProfile2.hardRequirements,
+      softRequirements: baseProfile2.softRequirements,
+      status: "Confirmed",
+      createdAt: "2026-06-07T16:20:00.000Z",
+      confirmedAt: "2026-06-07T16:20:00.000Z",
+    },
+  ],
+};
 
 export const mockCandidateSummary: CandidateSummary = {
   jobProfileId: "job-001",
