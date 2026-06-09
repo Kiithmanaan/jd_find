@@ -1,7 +1,7 @@
 import React from "react";
 import { cn } from "../../lib/utils.js";
 
-type PageId = "profiles" | "profile-editor" | "search-run" | "candidate-summary";
+type PageId = "profiles" | "profile-editor" | "search-run" | "candidate-summary" | "hard-condition";
 
 export function SideNav(props: { currentPath: PageId; onNavigate: (p: PageId) => void }): React.ReactElement {
   const btn = (label: string, page: PageId) => (
@@ -21,6 +21,8 @@ export function SideNav(props: { currentPath: PageId; onNavigate: (p: PageId) =>
       <p className="mb-2 mt-6 text-xs font-bold text-muted-foreground">任务</p>
       {btn("SearchRun 详情", "search-run")}
       {btn("候选人汇总", "candidate-summary")}
+      <p className="mb-2 mt-6 text-xs font-bold text-muted-foreground">配置</p>
+      {btn("硬筛条件配置", "hard-condition")}
     </aside>
   );
 }
