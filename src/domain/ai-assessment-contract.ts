@@ -1,4 +1,5 @@
 import { DomainError } from "./errors.js";
+import type { JobProfile } from "./types.js";
 import type { CandidateResult, MatchAssessment } from "./types.js";
 
 export const MATCH_ASSESSMENT_PROMPT_VERSION = "match-assessment-v1";
@@ -72,6 +73,20 @@ export function normalizeMatchAssessment(assessment: MatchAssessment): MatchAsse
     promptVersion,
     agentVersion,
   };
+}
+
+
+export function createMatchAssessmentPrompt(jobProfile: JobProfile, candidateIds: string[]): string {
+  return JSON.stringify({
+    task: "match-assessment",
+    jobProfileVersionId: jobProfile.currentVersionId,
+    jobProfile: {
+      title: jobProfile.title,
+      hardRequirements: jobProfile.hardRequirements,
+      softRequirements: jobProfile.softRequirements,
+    },
+    candidateIds,
+  });
 }
 
 function clampScore(score: number): number {

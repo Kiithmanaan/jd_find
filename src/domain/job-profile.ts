@@ -32,6 +32,16 @@ export function assertJobProfileConfirmed(jobProfile: JobProfile): void {
   }
 }
 
+
+export function normalizeConfirmedJobProfileVersion(jobProfile: JobProfile): JobProfile {
+  if (jobProfile.status !== "Confirmed" || jobProfile.currentVersionId) {
+    return jobProfile;
+  }
+  return {
+    ...jobProfile,
+    currentVersionId: createDefaultJobProfileVersionId(jobProfile.id),
+  };
+}
 export function createDefaultJobProfileVersionId(jobProfileId: string): string {
   return `${jobProfileId}-v1`;
 }
