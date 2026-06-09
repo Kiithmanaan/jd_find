@@ -89,7 +89,10 @@ export function App(): React.ReactElement {
     });
   }, [profiles, profileStatusFilter, profileKwFilter]);
 
-
+  const detailProfile = useMemo(
+    () => profileDetailId ? profiles.find((p) => p.id === profileDetailId) : undefined,
+    [profileDetailId, profiles],
+  );
 
   const currentSearchRun = useMemo(() => {
     if (!currentSearchRunId) return undefined;
@@ -966,14 +969,23 @@ function SearchRunDetail(props: {
   statusFilter: CandidateStatus | "All";
   recFilter: Recommendation | "All";
   autoSimulationActive: boolean;
-  onBackToList: () => void;
+  selectedIds: string[];
   onBackToList: () => void;
   onStatusFilter: (v: CandidateStatus | "All") => void;
   onRecFilter: (v: Recommendation | "All") => void;
+  onToggleSelect: (id: string) => void;
+  onSelectAll: () => void;
   onCancel: () => void;
   onSimulate: () => void;
   onAutoSimulate: () => void;
   onSimulateError: () => void;
+  onReassess: () => void;
+  onExport: () => void;
+  onRetry: () => void;
+  onCompare: () => void;
+  onAddCandidate: () => void;
+  onUpload: (candidateId: string, filename: string, contentType: string, sizeBytes: number) => void;
+  onBatchExport: () => void;
   onOpenMatch: (id: string) => void;
   onOpenAudit: () => void;
   onDownload: (c: Candidate) => void;
