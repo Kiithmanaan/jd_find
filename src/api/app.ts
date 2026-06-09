@@ -13,6 +13,7 @@ import type {
 } from "../application/ports.js";
 import { signAuthToken, verifyAuthTokenResult, verifyPassword, type AuthTokenPayload } from "../application/auth.js";
 import { reassessJobProfileCandidates } from "../application/reassess-job-profile-candidates.js";
+import { PluginCandidateService } from "../application/plugin-candidate.service.js";
 import {
   assertJobProfileConfirmed,
   confirmJobProfileVersion,
@@ -20,23 +21,8 @@ import {
   createDefaultJobProfileVersionId,
   createDraftJobProfileVersion,
 } from "../domain/job-profile.js";
-import {
-  acquireCandidateResults,
-  applyHardFilter,
-  applySoftAssessments,
-  cancelSearchRun,
-  completeSearchRun,
-  createSearchRun,
-  deduplicateWithinSearchRun,
-  failSearchRun,
-  startSearchRun,
-} from "../domain/search-run.js";
-import {
-  MATCH_ASSESSMENT_AGENT_VERSION,
-  MATCH_ASSESSMENT_PROMPT_VERSION,
-  normalizeAIAssessments,
-} from "../domain/ai-assessment-contract.js";
-import type { JobProfile, MatchAssessment, SearchRun } from "../domain/types.js";
+import { cancelSearchRun, createSearchRun, startSearchRun } from "../domain/search-run.js";
+import type { JobProfile, SearchRun } from "../domain/types.js";
 import {
   InMemoryAIAssessmentAuditSink,
   InMemoryHardConditionConfigRepository,
@@ -94,9 +80,13 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const pluginTokenTtlSeconds = options.auth?.pluginTokenTtlSeconds ?? 7 * 24 * 60 * 60;
   const attachmentStorageDir = options.attachmentStorageDir ?? process.env.RESUME_ATTACHMENT_DIR ?? join(process.cwd(), "data", "resume-attachments");
   const maxResumeAttachmentBytes = 20 * 1024 * 1024;
-  const pluginAggregationTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const pluginAggregationWindowMs = 30_000;
-  const pluginAggregationThreshold = 20;
+
+  const pluginCandidateService = new PluginCandidateService({
+    searchRuns,
+    jobProfiles,
+    aiAssessment,
+    aiAssessmentAudit: aiAssessmentAudits,
+  });
 
   app.get("/api/health", async () => {
     return { status: "ok" };
@@ -241,24 +231,18 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       return reply.code(422).send({ error: "SearchRunInvalid", message: "Search run job profile was not found." });
     }
 
-    const accepted = await acceptSubmittedCandidates(searchRun, jobProfile, parsedBody.data.candidates);
-    const shouldProcessImmediately =
-      countAcquiredCandidates(accepted) >= pluginAggregationThreshold ||
-      accepted.rawSubmittedCount >= accepted.targetResultCount;
-
-    if (shouldProcessImmediately) {
-      clearPluginAggregationTimer(accepted.id);
-      await processPendingCandidates(accepted, jobProfile);
-    } else {
-      schedulePluginAggregation(accepted.id);
-    }
+    const accepted = await pluginCandidateService.acceptCandidates(
+      searchRun,
+      jobProfile,
+      parsedBody.data.candidates,
+    );
 
     const latest = await searchRuns.findById(accepted.id);
     return reply.code(202).send({
       searchRunId: latest?.id ?? accepted.id,
       status: latest?.status ?? accepted.status,
       rawSubmittedCount: latest?.rawSubmittedCount ?? accepted.rawSubmittedCount,
-      acceptedCount: accepted.rawSubmittedCount - searchRun.rawSubmittedCount,
+      acceptedCount: (latest?.rawSubmittedCount ?? accepted.rawSubmittedCount) - searchRun.rawSubmittedCount,
       candidateCount: latest?.candidates.length ?? accepted.candidates.length,
     });
   });
@@ -386,7 +370,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       });
     }
 
-    clearPluginAggregationTimer(searchRun.id);
+    pluginCandidateService.cancelAggregation(searchRun.id);
     const cancelled = await searchRuns.save(cancelSearchRun(searchRun, "User cancelled search run."));
     return reply.code(200).send(cancelled);
   });
@@ -544,154 +528,6 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
     return (await users.findById(result.payload.sub)) ? result : { status: "invalid" };
   }
-
-  async function acceptSubmittedCandidates(
-    searchRun: SearchRun,
-    jobProfile: JobProfile,
-    candidates: Parameters<typeof acquireCandidateResults>[2],
-  ): Promise<SearchRun> {
-    const next = acquireCandidateResults(searchRun, jobProfile, candidates);
-    return searchRuns.save(next);
-  }
-
-  async function processPendingCandidates(
-    searchRun: SearchRun,
-    jobProfile: JobProfile,
-  ): Promise<SearchRun> {
-    let next = searchRun;
-    next = deduplicateWithinSearchRun(next);
-    next = applyHardFilter(next, jobProfile);
-
-    const hardPassedCandidates = next.candidates.filter((candidate) => candidate.status === "HardPassed");
-
-    const assessmentStartedAt = Date.now();
-    try {
-      const assessments = normalizeAIAssessments(
-        hardPassedCandidates,
-        await aiAssessment.assessCandidates(jobProfile, hardPassedCandidates),
-      );
-      await recordAIAudit(next, jobProfile, hardPassedCandidates, assessments, Date.now() - assessmentStartedAt, undefined);
-      next = applySoftAssessments(next, assessments);
-
-      if (next.rawSubmittedCount >= next.targetResultCount) {
-        next = completeSearchRun(next);
-      }
-
-      return searchRuns.save(next);
-    } catch (error) {
-      await recordAIAudit(next, jobProfile, hardPassedCandidates, new Map(), Date.now() - assessmentStartedAt, error);
-      const failed = failSearchRun(next, error instanceof Error ? `${error.name}: ${error.message}` : "UnknownError");
-      await searchRuns.save(failed);
-      throw error;
-    }
-  }
-
-  function schedulePluginAggregation(searchRunId: string): void {
-    if (pluginAggregationTimers.has(searchRunId)) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      void processScheduledPluginAggregation(searchRunId);
-    }, pluginAggregationWindowMs);
-    timer.unref();
-    pluginAggregationTimers.set(searchRunId, timer);
-  }
-
-  function clearPluginAggregationTimer(searchRunId: string): void {
-    const timer = pluginAggregationTimers.get(searchRunId);
-    if (!timer) {
-      return;
-    }
-
-    clearTimeout(timer);
-    pluginAggregationTimers.delete(searchRunId);
-  }
-
-  async function processScheduledPluginAggregation(searchRunId: string): Promise<void> {
-    clearPluginAggregationTimer(searchRunId);
-
-    const searchRun = await searchRuns.findById(searchRunId);
-    if (!searchRun || ["Completed", "Cancelled", "Failed"].includes(searchRun.status)) {
-      return;
-    }
-
-    const jobProfile = await jobProfiles.findById(searchRun.jobProfileId);
-    if (!jobProfile) {
-      await searchRuns.save(failSearchRun(searchRun, "SearchRunInvalid: Search run job profile was not found."));
-      return;
-    }
-
-    await processPendingCandidates(searchRun, jobProfile);
-  }
-
-  function countAcquiredCandidates(searchRun: SearchRun): number {
-    return searchRun.candidates.filter((candidate) => candidate.status === "Acquired").length;
-  }
-
-  async function recordAIAudit(
-    searchRun: SearchRun,
-    jobProfile: JobProfile,
-    candidates: SearchRun["candidates"],
-    assessments: Map<string, MatchAssessment>,
-    durationMs: number,
-    error: unknown | undefined,
-  ): Promise<void> {
-    if (candidates.length === 0) {
-      return;
-    }
-
-    const prompt = createMatchAssessmentPrompt(jobProfile, candidates);
-    await aiAssessmentAudits.record({
-      id: crypto.randomUUID(),
-      searchRunId: searchRun.id,
-      jobProfileId: jobProfile.id,
-      jobProfileVersionId: searchRun.jobProfileVersionId,
-      agentType: "match-assessment",
-      provider: aiAssessment.providerName ?? "unknown",
-      model: aiAssessment.modelName ?? "unknown",
-      promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
-      agentVersion: MATCH_ASSESSMENT_AGENT_VERSION,
-      prompt,
-      candidateIds: candidates.map((candidate) => candidate.id),
-      inputSnapshot: {
-        jobProfile: {
-          id: jobProfile.id,
-          title: jobProfile.title,
-          searchCondition: jobProfile.searchCondition,
-          hardRequirements: jobProfile.hardRequirements,
-          softRequirements: jobProfile.softRequirements,
-        },
-        candidates: candidates.map((candidate) => ({
-          id: candidate.id,
-          fingerprint: candidate.fingerprint,
-          resume: candidate.resume,
-        })),
-      },
-      outputSnapshot: Array.from(assessments.entries()).map(([candidateId, assessment]) => ({
-        candidateId,
-        assessment,
-      })),
-      durationMs,
-      status: error ? "failure" : "success",
-      errorType: error instanceof Error ? error.name : error ? "UnknownError" : undefined,
-      errorMessage: error instanceof Error ? error.message : error ? "Unknown AI assessment error." : undefined,
-      createdAt: new Date(),
-    });
-  }
-}
-
-function createMatchAssessmentPrompt(jobProfile: JobProfile, candidates: SearchRun["candidates"]): string {
-  return JSON.stringify({
-    task: "match-assessment",
-    jobProfileVersionId: jobProfile.currentVersionId,
-    jobProfile: {
-      title: jobProfile.title,
-      hardRequirements: jobProfile.hardRequirements,
-      softRequirements: jobProfile.softRequirements,
-    },
-    candidateIds: candidates.map((candidate) => candidate.id),
-  });
 }
 
 function decodeResumeAttachment(contentBase64: string): Buffer {
