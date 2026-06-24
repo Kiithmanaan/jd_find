@@ -22,6 +22,7 @@ export interface SourceAdapter {
 export interface AIAssessmentPort {
   readonly providerName?: string;
   readonly modelName?: string;
+  readonly graphVersion?: string;
 
   assessCandidates(
     jobProfile: JobProfile,
@@ -69,6 +70,7 @@ export interface SearchRunRepository {
 
 export interface OneTimeSearchJob {
   searchRunId: string;
+  ownerId?: string;
   jobProfile: JobProfile;
   source: OneTimeSearchSource;
 }

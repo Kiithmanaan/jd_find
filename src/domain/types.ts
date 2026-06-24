@@ -174,6 +174,7 @@ export interface AIAssessmentAuditRecord {
   model: string;
   promptVersion: string;
   agentVersion: string;
+  graphVersion?: string;
   prompt: string;
   candidateIds: Identifier[];
   inputSnapshot: {

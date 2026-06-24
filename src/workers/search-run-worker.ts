@@ -1,8 +1,5 @@
 import { Worker } from "bullmq";
 import { SearchRunJobHandler } from "../application/search-run-job-handler.js";
-import type { AIAssessmentPort } from "../application/ports.js";
-import { HttpAIAssessment } from "../infrastructure/http/http-ai-assessment.js";
-import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
 import {
   createPrismaClient,
@@ -13,6 +10,7 @@ import {
 import { ONE_TIME_SEARCH_JOB_NAME } from "../infrastructure/bullmq/bullmq-search-run-queue.js";
 import type { OneTimeSearchJob } from "../application/ports.js";
 import { loadEnvFile } from "../config/load-env.js";
+import { createAIAssessmentFromEnv } from "../infrastructure/ai/create-ai-assessment.js";
 
 loadEnvFile();
 
@@ -20,7 +18,7 @@ const queueName = process.env.SEARCH_RUN_QUEUE_NAME ?? "search-runs";
 const redisHost = process.env.REDIS_HOST ?? "127.0.0.1";
 const redisPort = Number(process.env.REDIS_PORT ?? 6379);
 const prisma = createPrismaClient();
-const aiAssessment = createAIAssessment();
+const aiAssessment = createAIAssessmentFromEnv(process.env);
 
 const handler = new SearchRunJobHandler({
   aiAssessment,
@@ -66,25 +64,3 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void shutdown().then(() => process.exit(0));
 });
-
-function createAIAssessment(): AIAssessmentPort {
-  if (process.env.AI_ASSESSMENT_PROVIDER === "http") {
-    const endpoint = process.env.AI_ASSESSMENT_ENDPOINT;
-
-    if (!endpoint) {
-      throw new Error("AI_ASSESSMENT_ENDPOINT is required when AI_ASSESSMENT_PROVIDER=http.");
-    }
-
-    return new HttpAIAssessment({
-      endpoint,
-      apiKey: process.env.AI_ASSESSMENT_API_KEY,
-      providerName: process.env.AI_ASSESSMENT_PROVIDER_NAME ?? "http",
-      modelName: process.env.AI_ASSESSMENT_MODEL ?? "external-ai-assessment",
-      timeoutMs: process.env.AI_ASSESSMENT_TIMEOUT_MS
-        ? Number(process.env.AI_ASSESSMENT_TIMEOUT_MS)
-        : undefined,
-    });
-  }
-
-  return new MockAIAssessment();
-}

@@ -24,6 +24,7 @@ test("PrismaAIAssessmentAuditSink writes audit snapshots", async () => {
     model: "mock-ai-assessment-v1",
     promptVersion: "match-assessment-v1",
     agentVersion: "jd-match-assessment-v1",
+    graphVersion: "match-assessment-graph-v1",
     prompt: "prompt body",
     candidateIds: ["candidate-1"],
     inputSnapshot: {
@@ -48,10 +49,11 @@ test("PrismaAIAssessmentAuditSink writes audit snapshots", async () => {
   });
 
   const data = (capturedArgs as {
-    data: { id: string; provider: string; candidateIds: unknown; prompt: string; durationMs: number };
+    data: { id: string; provider: string; graphVersion: string; candidateIds: unknown; prompt: string; durationMs: number };
   }).data;
   assert.equal(data.id, "audit-1");
   assert.equal(data.provider, "mock");
+  assert.equal(data.graphVersion, "match-assessment-graph-v1");
   assert.equal(data.prompt, "prompt body");
   assert.equal(data.durationMs, 12);
   assert.deepEqual(data.candidateIds, ["candidate-1"]);
@@ -78,6 +80,7 @@ test("PrismaAIAssessmentAuditSink reads audit snapshots by SearchRun", async () 
             model: "mock-ai-assessment-v1",
             promptVersion: "match-assessment-v1",
             agentVersion: "jd-match-assessment-v1",
+            graphVersion: "match-assessment-graph-v1",
             prompt: "prompt body",
             candidateIds: ["candidate-1"],
             inputSnapshot: {
@@ -120,6 +123,7 @@ test("PrismaAIAssessmentAuditSink reads audit snapshots by SearchRun", async () 
   assert.equal(record?.id, "audit-1");
   assert.equal(record?.prompt, "prompt body");
   assert.equal(record?.durationMs, 25);
+  assert.equal(record?.graphVersion, "match-assessment-graph-v1");
   assert.equal(record?.status, "failure");
   assert.equal(record?.errorType, "DomainError");
   assert.equal(record?.outputSnapshot[0]?.assessment.assessedAt instanceof Date, true);

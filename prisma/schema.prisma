@@ -119,6 +119,7 @@ model AIAssessmentAuditRecord {
   model          String
   promptVersion  String          @default("match-assessment-v1")
   agentVersion   String          @default("jd-match-assessment-v1")
+  graphVersion   String?
   prompt         String          @default("")
   candidateIds   Json
   inputSnapshot  Json

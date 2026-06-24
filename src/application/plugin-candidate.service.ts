@@ -193,6 +193,7 @@ export class PluginCandidateService {
       model: this.deps.aiAssessment.modelName ?? "unknown",
       promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
       agentVersion: MATCH_ASSESSMENT_AGENT_VERSION,
+      graphVersion: this.deps.aiAssessment.graphVersion,
       prompt,
       candidateIds: candidates.map((candidate) => candidate.id),
       inputSnapshot: {

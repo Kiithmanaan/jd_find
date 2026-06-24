@@ -9,6 +9,7 @@ import {
   PrismaUserRepository,
 } from "../infrastructure/prisma/prisma-repositories.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
+import { createAIAssessmentFromEnv } from "../infrastructure/ai/create-ai-assessment.js";
 import { createApp } from "./app.js";
 
 export interface CreateProductionAppOptions {
@@ -35,6 +36,7 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     hardConditionConfig: new PrismaHardConditionConfigRepository(prisma),
     searchRuns: new PrismaSearchRunRepository(prisma),
     aiAssessmentAudits: new PrismaAIAssessmentAuditSink(prisma),
+    aiAssessment: createAIAssessmentFromEnv(process.env),
     searchRunQueue,
     users: new PrismaUserRepository(prisma),
     auth: {
