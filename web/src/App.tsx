@@ -786,6 +786,7 @@ function ProfileEditor(props: {
   onApplySuggestion: (field: string, value: string) => void;
 }): React.ReactElement {
   const f = (field: keyof ProfileForm) => props.form[field];
+  const suggestions = props.suggestions;
   return (
     <div className="grid grid-cols-[1.4fr,0.6fr] gap-4">
       <Card>
@@ -901,27 +902,27 @@ function ProfileEditor(props: {
               </Button>
             </div>
           ) : null}
-          {!props.suggesting && props.suggestions ? (
+          {!props.suggesting && suggestions ? (
             <div className="space-y-3 mt-2">
               <p className="text-xs text-green-600 font-medium">AI 建议已生成</p>
               <div className="space-y-2 text-xs border rounded p-2 bg-muted/20">
                 <p className="font-medium text-muted-foreground">建议关键词</p>
-                <p className="font-mono">{props.suggestions.keywords}</p>
-                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("keywords", props.suggestions.keywords)}>
+                <p className="font-mono">{suggestions.keywords}</p>
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("keywords", suggestions.keywords)}>
                   应用关键词
                 </Button>
               </div>
               <div className="space-y-2 text-xs border rounded p-2 bg-muted/20">
                 <p className="font-medium text-muted-foreground">建议硬性条件</p>
-                <pre className="font-mono text-xs whitespace-pre-wrap">{props.suggestions.hardRequirements}</pre>
-                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("hardRequirements", props.suggestions.hardRequirements)}>
+                <pre className="font-mono text-xs whitespace-pre-wrap">{suggestions.hardRequirements}</pre>
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("hardRequirements", suggestions.hardRequirements)}>
                   应用硬性条件
                 </Button>
               </div>
               <div className="space-y-2 text-xs border rounded p-2 bg-muted/20">
                 <p className="font-medium text-muted-foreground">建议软性条件</p>
-                <pre className="font-mono text-xs whitespace-pre-wrap">{props.suggestions.softRequirements}</pre>
-                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("softRequirements", props.suggestions.softRequirements)}>
+                <pre className="font-mono text-xs whitespace-pre-wrap">{suggestions.softRequirements}</pre>
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => props.onApplySuggestion("softRequirements", suggestions.softRequirements)}>
                   应用软性条件
                 </Button>
               </div>
@@ -989,14 +990,16 @@ function SearchRunDetail(props: {
   onOpenMatch: (id: string) => void;
   onOpenAudit: () => void;
   onDownload: (c: Candidate) => void;
-}): React.ReactElement {
+}): React.ReactElement | null {
   if (props.loading) {
     return <LoadingSkeleton rows={6} />;
   }
 
-      if (!props.searchRun) {
+  if (!props.searchRun) {
     return null;
   }
+
+  const searchRun = props.searchRun;
 
   const pct = props.searchRun.targetResultCount > 0
     ? Math.round((props.searchRun.rawSubmittedCount / props.searchRun.targetResultCount) * 100)
@@ -1122,7 +1125,7 @@ function SearchRunDetail(props: {
                   evt.type === "SearchInterrupted" ? "bg-yellow-500" :
                   "bg-primary"
                 )} />
-                {i < props.searchRun.events.length - 1 ? <div className="w-px h-3 bg-border" /> : null}
+                {i < searchRun.events.length - 1 ? <div className="w-px h-3 bg-border" /> : null}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between">

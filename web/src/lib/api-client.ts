@@ -199,6 +199,7 @@ export async function addManualCandidate(searchRunId: string, form: ManualCandid
     yearsOfExperience: form.yearsOfExperience,
     industries: form.industries.split(",").map((s) => s.trim()).filter(Boolean),
     keywords: form.keywords.split(",").map((s) => s.trim()).filter(Boolean),
+    summary: form.summary,
     intent: form.intent,
     activityLevel: form.activityLevel,
     sourcePlatform: form.sourcePlatform,

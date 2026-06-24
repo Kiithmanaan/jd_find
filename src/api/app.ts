@@ -22,7 +22,7 @@ import {
   createDraftJobProfileVersion,
 } from "../domain/job-profile.js";
 import { cancelSearchRun, createSearchRun, startSearchRun } from "../domain/search-run.js";
-import type { JobProfile, SearchRun } from "../domain/types.js";
+import type { CandidateResult, JobProfile, ResumeAttachment, SearchRun } from "../domain/types.js";
 import {
   InMemoryAIAssessmentAuditSink,
   InMemoryHardConditionConfigRepository,
@@ -182,6 +182,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
     const queued = await searchRunQueue.enqueueOneTimeSearch({
       searchRunId,
+      ownerId: currentUser.status === "valid" ? currentUser.payload.sub : undefined,
       jobProfile: ownedJobProfile,
       source:
         body.sourceType === "csv"
@@ -316,6 +317,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   );
 
   app.get<{ Params: { id: string } }>("/api/search-runs/:id", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const searchRun = await searchRuns.findById(request.params.id);
 
     if (!searchRun) {
@@ -325,7 +331,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       });
     }
 
-    return reply.code(200).send(searchRun);
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+
+    return reply.code(200).send(toSearchRunResponse(searchRun));
   });
 
   app.get<{ Params: { id: string; candidateId: string } }>(
@@ -339,6 +349,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       const searchRun = await searchRuns.findById(request.params.id);
       if (!searchRun) {
         return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+      }
+      if (!canAccessSearchRun(searchRun, currentUser)) {
+        return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
       }
 
       const candidate = searchRun.candidates.find((item) => item.id === request.params.candidateId);
@@ -363,6 +376,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     if (!searchRun) {
       return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
     }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
     if (searchRun.status !== "Running" && searchRun.status !== "Acquired") {
       return reply.code(409).send({
         error: "SearchRunNotCancellable",
@@ -372,13 +388,21 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
     pluginCandidateService.cancelAggregation(searchRun.id);
     const cancelled = await searchRuns.save(cancelSearchRun(searchRun, "User cancelled search run."));
-    return reply.code(200).send(cancelled);
+    return reply.code(200).send(toSearchRunResponse(cancelled));
   });
 
   app.get<{ Params: { id: string } }>("/api/job-profiles/:id/candidates", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const jobProfile = await jobProfiles.findById(request.params.id);
     if (!jobProfile) {
       return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
     }
 
     const currentVersion = jobProfile.currentVersionId
@@ -389,17 +413,26 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     }
 
     const runs = await searchRuns.findByJobProfileId(jobProfile.id);
+    const accessibleRuns = runs.filter((searchRun) => canAccessSearchRun(searchRun, currentUser));
     return reply.code(200).send({
       jobProfileId: jobProfile.id,
       jobProfileVersionId: currentVersion.id,
-      ...summarizeJobProfileCandidates(runs, currentVersion.id),
+      ...toCandidateSummaryResponse(summarizeJobProfileCandidates(accessibleRuns, currentVersion.id)),
     });
   });
 
   app.get<{ Params: { id: string } }>("/api/job-profiles/:id/versions", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const jobProfile = await jobProfiles.findById(request.params.id);
     if (!jobProfile) {
       return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
     }
 
     return reply.code(200).send({
@@ -410,9 +443,17 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   });
 
   app.post<{ Params: { id: string } }>("/api/job-profiles/:id/versions/draft", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const jobProfile = await jobProfiles.findById(request.params.id);
     if (!jobProfile) {
       return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
     }
 
     const parsedBody = jobProfileVersionDraftRequestSchema.safeParse(request.body);
@@ -439,9 +480,17 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   app.post<{ Params: { id: string; versionId: string } }>(
     "/api/job-profiles/:id/versions/:versionId/confirm",
     async (request, reply) => {
+      const currentUser = await authenticateRequest(request.headers.authorization, "web");
+      if (authEnabled && currentUser.status !== "valid") {
+        return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+      }
+
       const jobProfile = await jobProfiles.findById(request.params.id);
       if (!jobProfile) {
         return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+      }
+      if (!canAccessJobProfile(jobProfile, currentUser)) {
+        return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
       }
 
       const version = await jobProfileVersions.findById(request.params.versionId);
@@ -461,9 +510,17 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   );
 
   app.post<{ Params: { id: string } }>("/api/job-profiles/:id/reassess-candidates", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const jobProfile = await jobProfiles.findById(request.params.id);
     if (!jobProfile) {
       return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
     }
     if (jobProfile.status !== "Confirmed" || !jobProfile.currentVersionId) {
       return reply.code(422).send({ error: "JobProfileNotConfirmed", message: "Job profile must be confirmed." });
@@ -480,6 +537,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   });
 
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
     const searchRun = await searchRuns.findById(request.params.id);
 
     if (!searchRun) {
@@ -487,6 +549,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
         error: "SearchRunNotFound",
         message: "Search run was not found.",
       });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
     }
 
     const records = await aiAssessmentAudits.findBySearchRunId(request.params.id);
@@ -528,6 +593,67 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
     return (await users.findById(result.payload.sub)) ? result : { status: "invalid" };
   }
+}
+
+type AuthenticatedRequestState =
+  | { status: "valid"; payload: AuthTokenPayload }
+  | { status: "missing" | "invalid" | "expired" };
+
+type PublicResumeAttachment = Omit<ResumeAttachment, "storagePath">;
+type PublicCandidateResult = Omit<CandidateResult, "resumeAttachment"> & {
+  resumeAttachment?: PublicResumeAttachment;
+};
+type PublicSearchRun = Omit<SearchRun, "candidates"> & {
+  candidates: PublicCandidateResult[];
+};
+
+function canAccessSearchRun(searchRun: SearchRun, currentUser: AuthenticatedRequestState): boolean {
+  if (currentUser.status !== "valid" || !searchRun.ownerId) {
+    return true;
+  }
+
+  return searchRun.ownerId === currentUser.payload.sub;
+}
+
+function canAccessJobProfile(jobProfile: JobProfile, currentUser: AuthenticatedRequestState): boolean {
+  if (currentUser.status !== "valid" || !jobProfile.createdByUserId) {
+    return true;
+  }
+
+  return jobProfile.createdByUserId === currentUser.payload.sub;
+}
+
+function toSearchRunResponse(searchRun: SearchRun): PublicSearchRun {
+  return {
+    ...searchRun,
+    candidates: searchRun.candidates.map(toCandidateResponse),
+  };
+}
+
+function toCandidateSummaryResponse(summary: {
+  currentVersionCandidates: CandidateResult[];
+  staleVersionCandidates: CandidateResult[];
+}): {
+  currentVersionCandidates: PublicCandidateResult[];
+  staleVersionCandidates: PublicCandidateResult[];
+} {
+  return {
+    currentVersionCandidates: summary.currentVersionCandidates.map(toCandidateResponse),
+    staleVersionCandidates: summary.staleVersionCandidates.map(toCandidateResponse),
+  };
+}
+
+function toCandidateResponse(candidate: CandidateResult): PublicCandidateResult {
+  const { resumeAttachment, ...rest } = candidate;
+  if (!resumeAttachment) {
+    return rest;
+  }
+
+  const { storagePath: _storagePath, ...publicAttachment } = resumeAttachment;
+  return {
+    ...rest,
+    resumeAttachment: publicAttachment,
+  };
 }
 
 function decodeResumeAttachment(contentBase64: string): Buffer {

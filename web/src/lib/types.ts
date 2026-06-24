@@ -66,6 +66,8 @@ export interface Candidate {
   educationLevel: string;
   yearsOfExperience: number;
   industries: string[];
+  keywords?: string[];
+  summary?: string;
   intent: string;
   activityLevel: string;
   sourcePlatform: string;

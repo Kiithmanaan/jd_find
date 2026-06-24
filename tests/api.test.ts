@@ -319,6 +319,49 @@ test("认证开启后 Web 登录可创建插件 SearchRun", async () => {
   assert.equal(saved?.rawSubmittedCount, 0);
 });
 
+test("认证开启后异步 SearchRun 队列任务保留创建用户", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRunQueue = new InMemorySearchRunQueue();
+  const app = createApp({
+    idGenerator: () => "owned-queued-run",
+    users,
+    searchRunQueue,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "hunter@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(login.statusCode, 200);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${login.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "mock",
+      candidates: createCandidateDrafts(),
+    },
+  });
+  assert.equal(response.statusCode, 202);
+
+  const queuedJob = searchRunQueue.findJobById(response.json().jobId);
+  assert.equal(queuedJob?.ownerId, "user-1");
+});
+
 test("Web 可取消 Running SearchRun，取消后插件提交被拒绝", async () => {
   const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
   const searchRuns = new InMemorySearchRunRepository();
@@ -593,6 +636,17 @@ test("插件可上传、覆盖候选人附件，Web 可下载", async () => {
   assert.equal(download.statusCode, 200);
   assert.equal(download.body, "second");
   assert.equal(download.headers["content-type"], "application/pdf");
+
+  const query = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/plugin-run-attachment",
+    headers: {
+      authorization: `Bearer ${webLogin.json().token}`,
+    },
+  });
+  assert.equal(query.statusCode, 200);
+  assert.equal(query.json().candidates[0].resumeAttachment.filename, "resume.pdf");
+  assert.equal("storagePath" in query.json().candidates[0].resumeAttachment, false);
 });
 
 test("认证开启后过期 token 返回 TokenExpired", async () => {
@@ -764,6 +818,219 @@ test("插件不能向其他用户创建的 SearchRun 提交候选人", async () 
 
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().error, "AuthError");
+});
+
+test("Web 用户不能访问其他用户的 SearchRun、附件和审计", async () => {
+  const users = new InMemoryUserRepository([
+    createUser("user-1", "owner@example.test", "secret"),
+    createUser("user-2", "other@example.test", "secret"),
+  ]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const attachmentStorageDir = await mkdtemp(join(tmpdir(), "jd-attachments-"));
+  const app = createApp({
+    idGenerator: () => "plugin-run-private",
+    users,
+    searchRuns,
+    jobProfiles,
+    attachmentStorageDir,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const ownerWebLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "owner@example.test",
+      password: "secret",
+    },
+  });
+  const ownerPluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: {
+      email: "owner@example.test",
+      password: "secret",
+    },
+  });
+  const otherWebLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "other@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(ownerWebLogin.statusCode, 200);
+  assert.equal(ownerPluginLogin.statusCode, 200);
+  assert.equal(otherWebLogin.statusCode, 200);
+
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${ownerWebLogin.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const submit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-private/candidates",
+    headers: {
+      authorization: `Bearer ${ownerPluginLogin.json().token}`,
+    },
+    payload: {
+      candidates: createCandidateDrafts().slice(0, 1),
+    },
+  });
+  assert.equal(submit.statusCode, 202);
+
+  const saved = await searchRuns.findById("plugin-run-private");
+  const candidateId = saved?.candidates[0]?.id;
+  assert.equal(typeof candidateId, "string");
+
+  const upload = await app.inject({
+    method: "POST",
+    url: `/api/plugin/search-runs/plugin-run-private/candidates/${candidateId}/resume-attachment`,
+    headers: {
+      authorization: `Bearer ${ownerPluginLogin.json().token}`,
+    },
+    payload: {
+      filename: "resume.pdf",
+      contentType: "application/pdf",
+      contentBase64: Buffer.from("private").toString("base64"),
+    },
+  });
+  assert.equal(upload.statusCode, 200);
+
+  const otherHeaders = {
+    authorization: `Bearer ${otherWebLogin.json().token}`,
+  };
+  const queryRun = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/plugin-run-private",
+    headers: otherHeaders,
+  });
+  assert.equal(queryRun.statusCode, 403);
+
+  const download = await app.inject({
+    method: "GET",
+    url: `/api/search-runs/plugin-run-private/candidates/${candidateId}/resume-attachment`,
+    headers: otherHeaders,
+  });
+  assert.equal(download.statusCode, 403);
+
+  const cancel = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/plugin-run-private/cancel",
+    headers: otherHeaders,
+  });
+  assert.equal(cancel.statusCode, 403);
+
+  const audit = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/plugin-run-private/ai-assessment-audits",
+    headers: otherHeaders,
+  });
+  assert.equal(audit.statusCode, 403);
+});
+
+test("Web 用户不能访问其他用户的 JobProfile 版本和汇总", async () => {
+  const users = new InMemoryUserRepository([
+    createUser("user-1", "owner@example.test", "secret"),
+    createUser("user-2", "other@example.test", "secret"),
+  ]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const jobProfileVersions = new InMemoryJobProfileVersionRepository();
+  const app = createApp({
+    idGenerator: () => "job-profile-private-run",
+    users,
+    searchRuns,
+    jobProfiles,
+    jobProfileVersions,
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const ownerLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "owner@example.test",
+      password: "secret",
+    },
+  });
+  const otherLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: {
+      email: "other@example.test",
+      password: "secret",
+    },
+  });
+  assert.equal(ownerLogin.statusCode, 200);
+  assert.equal(otherLogin.statusCode, 200);
+
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: {
+      authorization: `Bearer ${ownerLogin.json().token}`,
+    },
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const otherHeaders = {
+    authorization: `Bearer ${otherLogin.json().token}`,
+  };
+  const versions = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/versions",
+    headers: otherHeaders,
+  });
+  assert.equal(versions.statusCode, 403);
+
+  const candidates = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/candidates",
+    headers: otherHeaders,
+  });
+  assert.equal(candidates.statusCode, 403);
+
+  const draft = await app.inject({
+    method: "POST",
+    url: "/api/job-profiles/job-1/versions/draft",
+    headers: otherHeaders,
+    payload: {
+      title: "非法草稿",
+      jdText: createConfirmedJobProfile().jdText,
+      searchCondition: createConfirmedJobProfile().searchCondition,
+      hardRequirements: createConfirmedJobProfile().hardRequirements,
+      softRequirements: createConfirmedJobProfile().softRequirements,
+    },
+  });
+  assert.equal(draft.statusCode, 403);
 });
 
 test("API 查询不存在的 SearchRun 返回 404", async () => {
