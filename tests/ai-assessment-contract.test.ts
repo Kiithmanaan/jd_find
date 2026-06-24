@@ -128,7 +128,7 @@ test("编排器接受包含推荐结论的评估输出", async () => {
     idGenerator: () => "recommending-ai-run",
   });
 
-  const searchRun = await orchestrator.runOneTimeSearch(createConfirmedJobProfile());
+  const searchRun = await orchestrator.runOneTimeSearch(createConfirmedJobProfile(), undefined);
   const assessed = searchRun.candidates.filter((candidate) => candidate.matchAssessment);
 
   assert.equal(searchRun.status, "Completed");

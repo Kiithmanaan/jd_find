@@ -39,7 +39,7 @@ export class SearchRunJobHandler {
       idGenerator: () => job.searchRunId,
     });
 
-    return orchestrator.runOneTimeSearch(job.jobProfile);
+    return orchestrator.runOneTimeSearch(job.jobProfile, job.ownerId);
   }
 }
 

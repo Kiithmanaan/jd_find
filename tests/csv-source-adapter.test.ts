@@ -76,7 +76,7 @@ test("CsvSourceAdapter 从文件读取候选人并走一次性寻访闭环", asy
     aiAssessment: new MockAIAssessment(),
     idGenerator: () => "csv-orchestrated-run",
   });
-  const completed = await orchestrator.runOneTimeSearch(jobProfile);
+  const completed = await orchestrator.runOneTimeSearch(jobProfile, undefined);
 
   assert.equal(completed.status, "Completed");
   assert.equal(completed.candidates.length, 2);

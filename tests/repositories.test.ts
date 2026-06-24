@@ -27,7 +27,7 @@ test("SearchRun 编排会在关键状态后保存可恢复快照", async () => {
     auditIdGenerator: () => "audit-1",
   });
 
-  await orchestrator.runOneTimeSearch(createConfirmedJobProfile());
+  await orchestrator.runOneTimeSearch(createConfirmedJobProfile(), undefined);
 
   const savedJobProfile = await jobProfiles.findById("job-1");
   assert.equal(savedJobProfile?.status, "Confirmed");
@@ -83,7 +83,7 @@ test("风控中止也会保存 Interrupted 快照和风险事件", async () => {
     idGenerator: () => "persisted-risk-run",
   });
 
-  await orchestrator.runOneTimeSearch(createConfirmedJobProfile());
+  await orchestrator.runOneTimeSearch(createConfirmedJobProfile(), undefined);
 
   const savedSearchRun = await searchRuns.findById("persisted-risk-run");
   assert.equal(savedSearchRun?.status, "Interrupted");
