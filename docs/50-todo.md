@@ -1,6 +1,6 @@
-# 非代码类 TODO
+# TODO 与后置事项
 
-本文档只列当前仍未完成的非代码类事项。已落成的说明文档不再重复列入 TODO。
+本文档记录当前仍未完成的事项、后置事项和实现风险。任何进入实现的 TODO，必须先在 `docs/51-acceptance-checklist.md` 中具备对应验收项。
 
 ## 1. 仍需外部信息
 
@@ -34,16 +34,21 @@
 - 候选人数据合规风险：MVP 版本暂不考虑，正式上线前再复核。
 - Web 权限模型风险：MVP 版本暂不考虑，正式多人使用前再复核。
 
-## 6. 已完成的非代码产物
+## 6. 已完成的文档产物
 
-- `docs/demo-script.md`
-- `docs/acceptance-checklist.md`
-- `docs/plugin-integration-protocol.md`
-- `docs/ai-agent-spec.md`
-- `docs/hard-condition-config.md`
-- `docs/frontend-product-design.md`
-- `docs/demo-data.md`
-- `docs/openapi.yaml`
-- `docs/development-guide.md`
-- `docs/deployment-guide.md`
-- `docs/operations-runbook.md`
+- `docs/README.md`
+- `docs/00-requirements-baseline.md`
+- `docs/10-technical-architecture.md`
+- `docs/11-technical-implementation-decisions.md`
+- `docs/20-requirements-frontend-product.md`
+- `docs/21-requirements-ai-agent-contract.md`
+- `docs/22-requirements-hard-filter-config.md`
+- `docs/30-technical-plugin-protocol.md`
+- `docs/31-technical-openapi.yaml`
+- `docs/40-engineering-development-guide.md`
+- `docs/50-todo.md`
+- `docs/51-acceptance-checklist.md`
+- `docs/60-operations-deployment-guide.md`
+- `docs/61-operations-runbook.md`
+- `docs/70-demo-script.md`
+- `docs/71-demo-data.md`

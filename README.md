@@ -270,23 +270,25 @@ npm run build
 npm run worker:search
 ```
 
-## 架构文档
+## 项目文档
 
-- `docs/engineering-architecture.md`：工程化落地架构确认稿。
-- `docs/pre-implementation-decisions.md`：代码实现前确认清单。
-- `docs/confirmed-decisions.md`：当前已确认的产品与工程决策。
-- `docs/non-code-todo.md`：非代码类 TODO 清单。
-- `docs/demo-script.md`：第一阶段本地演示脚本。
-- `docs/acceptance-checklist.md`：第一阶段验收清单。
-- `docs/plugin-integration-protocol.md`：浏览器插件接入协议。
-- `docs/ai-agent-spec.md`：AI 与 Agent 输入、输出、版本和验收口径。
-- `docs/hard-condition-config.md`：硬性条件配置说明。
-- `docs/frontend-product-design.md`：前端产品设计。
-- `docs/demo-data.md`：第一阶段演示岗位画像和候选人样例。
-- `docs/openapi.yaml`：第一阶段 OpenAPI 规格。
-- `docs/development-guide.md`：开发手册。
-- `docs/deployment-guide.md`：部署手册。
-- `docs/operations-runbook.md`：运营与排障手册。
+修改前先阅读 `docs/README.md`，按“需求、技术设计、TODO、验收、代码”的顺序确认实施路径。
+
+- `docs/00-requirements-baseline.md`：最高优先级需求与工程决策基线。
+- `docs/10-technical-architecture.md`：工程化落地架构确认稿。
+- `docs/11-technical-implementation-decisions.md`：代码实现前确认清单。
+- `docs/20-requirements-frontend-product.md`：前端产品设计。
+- `docs/21-requirements-ai-agent-contract.md`：AI 与 Agent 输入、输出、版本和验收口径。
+- `docs/22-requirements-hard-filter-config.md`：硬性条件配置说明。
+- `docs/30-technical-plugin-protocol.md`：浏览器插件接入协议。
+- `docs/31-technical-openapi.yaml`：第一阶段 OpenAPI 规格。
+- `docs/40-engineering-development-guide.md`：开发手册。
+- `docs/50-todo.md`：TODO、后置事项和风险追踪。
+- `docs/51-acceptance-checklist.md`：第一阶段验收清单。
+- `docs/60-operations-deployment-guide.md`：部署手册。
+- `docs/61-operations-runbook.md`：运营与排障手册。
+- `docs/70-demo-script.md`：第一阶段本地演示脚本。
+- `docs/71-demo-data.md`：第一阶段演示岗位画像和候选人样例。
 
 ## Source Adapter 契约
 
