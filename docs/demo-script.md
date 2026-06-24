@@ -94,13 +94,15 @@ curl -s http://127.0.0.1:3000/api/plugin/auth/login \
 查询 `SearchRun`：
 
 ```bash
-curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId}
+curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId} \
+  -H "Authorization: Bearer ${WEB_TOKEN}"
 ```
 
 查询 AI 审计：
 
 ```bash
-curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId}/ai-assessment-audits
+curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId}/ai-assessment-audits \
+  -H "Authorization: Bearer ${WEB_TOKEN}"
 ```
 
 ## 5. 异常状态演示
@@ -113,8 +115,9 @@ curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId}/ai-assessment-audits
 
 `Cancelled`：
 
-- 第一阶段领域规则已确认，取消接口尚未实现。
-- 当前 demo 只在验收清单中标记为待实现。
+- 使用 Web Token 调用 `POST /api/search-runs/{searchRunId}/cancel`。
+- 查询 `SearchRun.status = Cancelled`。
+- 再使用插件提交候选人，确认返回 `SearchRunCancelled`。
 
 `Interrupted`：
 
@@ -129,4 +132,4 @@ curl -s http://127.0.0.1:3000/api/search-runs/{searchRunId}/ai-assessment-audits
 - 插件可提交候选人。
 - 候选人可进入硬筛与 AI 评估流程。
 - AI 审计可查询。
-- Failed / Interrupted 可演示，Cancelled 标记为待实现。
+- Failed / Interrupted / Cancelled 均可演示。

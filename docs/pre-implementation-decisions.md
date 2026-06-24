@@ -132,11 +132,11 @@ JobProfile Confirmed
 - 能模拟风控触发并中止任务。
 - 能模拟 AI 或来源异常并保存 `Failed` 快照。
 
-## 9. 待用户确认项
+## 9. 已确认执行口径
 
-以下事项会影响代码生成：
+以下事项已作为第一阶段代码生成输入：
 
 1. 是否接受 TypeScript + Fastify + Prisma + BullMQ 作为默认技术栈。
 2. 是否接受第一阶段只接 Mock Source Adapter，不接真实平台。
-3. 是否接受第一阶段只接 Mock AI Assessment，不接真实 AI 模型。
+3. 是否接受第一阶段先落地 AI Assessment 契约、Mock AI 和通用 HTTP AI Adapter；真实模型服务由外部 AI endpoint 封装，生产 API 进程内接线后置。
 4. 是否优先实现 API + 领域 + Worker，不先做完整前端界面。

@@ -119,6 +119,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchRun"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
   /search-runs/{id}/cancel:
@@ -134,6 +138,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchRun"
         "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
           $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
@@ -155,8 +161,14 @@ paths:
                 format: binary
         "401":
           $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
         "404":
-          $ref: "#/components/responses/SearchRunNotFound"
+          description: SearchRun、候选人或附件不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /search-runs/{id}/ai-assessment-audits:
     get:
       summary: 查询 SearchRun 的 AI 审计
@@ -177,6 +189,10 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/AIAssessmentAudit"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
   /job-profiles/{id}/versions:
@@ -201,6 +217,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/JobProfileVersion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
   /job-profiles/{id}/versions/draft:
     post:
       summary: 创建 JobProfile 草稿版本
@@ -219,6 +241,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobProfileVersion"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
   /job-profiles/{id}/versions/{versionId}/confirm:
     post:
       summary: 确认 JobProfile 版本
@@ -242,6 +272,16 @@ paths:
                     $ref: "#/components/schemas/JobProfile"
                   version:
                     $ref: "#/components/schemas/JobProfileVersion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          description: JobProfile 或 JobProfileVersion 不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /job-profiles/{id}/candidates:
     get:
       summary: 查询同一 JobProfile 跨 SearchRun 去重后的候选人汇总
@@ -263,11 +303,19 @@ paths:
                   currentVersionCandidates:
                     type: array
                     items:
-                      type: object
+                      $ref: "#/components/schemas/CandidateResult"
                   staleVersionCandidates:
                     type: array
                     items:
-                      type: object
+                      $ref: "#/components/schemas/CandidateResult"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+        "422":
+          $ref: "#/components/responses/DomainError"
   /job-profiles/{id}/reassess-candidates:
     post:
       summary: 手动批量重新评估同一 JobProfile 的历史候选人
@@ -294,6 +342,14 @@ paths:
                     type: array
                     items:
                       type: string
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+        "422":
+          $ref: "#/components/responses/DomainError"
   /plugin/search-runs/{id}/candidates:
     post:
       summary: 插件提交候选人
@@ -377,8 +433,14 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
         "404":
-          $ref: "#/components/responses/SearchRunNotFound"
+          description: SearchRun 或 Candidate 不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "413":
           $ref: "#/components/responses/DomainError"
 components:
@@ -426,6 +488,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     SearchRunNotFound:
       description: SearchRun 不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    JobProfileNotFound:
+      description: JobProfile 不存在
       content:
         application/json:
           schema:
@@ -564,6 +632,37 @@ components:
           type: string
         sourceLead:
           $ref: "#/components/schemas/SourceLead"
+    CandidateResult:
+      type: object
+      required: [id, fingerprint, jobProfileId, searchRunId, status, resume, intent, activityLevel, sourceLead, hardRejectReasons]
+      properties:
+        id:
+          type: string
+        fingerprint:
+          type: string
+        jobProfileId:
+          type: string
+        searchRunId:
+          type: string
+        status:
+          type: string
+          enum: [Pending, Acquired, Deduplicated, HardPassed, HardRejected, Assessed, Displayable]
+        resume:
+          $ref: "#/components/schemas/CandidateResume"
+        intent:
+          type: string
+        activityLevel:
+          type: string
+        sourceLead:
+          $ref: "#/components/schemas/SourceLead"
+        hardRejectReasons:
+          type: array
+          items:
+            type: string
+        matchAssessment:
+          $ref: "#/components/schemas/MatchAssessment"
+        resumeAttachment:
+          $ref: "#/components/schemas/PublicResumeAttachment"
     CandidateResume:
       type: object
       required: [name, title, city, educationLevel, yearsOfExperience, industries, keywords, summary]
@@ -641,7 +740,7 @@ components:
           type: string
     PluginOneTimeSearchRequest:
       type: object
-      required: [jobProfile, sourceType, targetResultCount]
+      required: [jobProfile, sourceType]
       properties:
         jobProfile:
           $ref: "#/components/schemas/JobProfile"
@@ -652,6 +751,7 @@ components:
           type: integer
           minimum: 10
           maximum: 500
+          default: 200
     QueuedSearchRunResponse:
       type: object
       required: [jobId, searchRunId, status, statusUrl]
@@ -726,7 +826,7 @@ components:
         candidates:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/CandidateResult"
         events:
           type: array
           items:
@@ -735,6 +835,59 @@ components:
           type: string
         interruptedReason:
           type: string
+    MatchAssessment:
+      type: object
+      required: [score, recommendation, recommendationReason, matchedPoints, unmatchedPoints, riskPoints, trace, assessedAt, promptVersion, agentVersion]
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        recommendation:
+          type: string
+          enum: [推荐, 待定, 不推荐]
+        recommendationReason:
+          type: string
+        matchedPoints:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+        unmatchedPoints:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+        riskPoints:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+        trace:
+          type: string
+        assessedAt:
+          type: string
+          format: date-time
+        jobProfileVersionId:
+          type: string
+        promptVersion:
+          type: string
+        agentVersion:
+          type: string
+    PublicResumeAttachment:
+      type: object
+      description: 公开附件元数据，不包含本地 storagePath。
+      required: [filename, contentType, sizeBytes, uploadedAt]
+      properties:
+        filename:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        uploadedAt:
+          type: string
+          format: date-time
     HardConditionDimension:
       type: object
       required: [id, key, label, valueType, supportedMatchModes, allowMultiple, createdAt, options]
@@ -782,6 +935,8 @@ components:
         promptVersion:
           type: string
         agentVersion:
+          type: string
+        graphVersion:
           type: string
         prompt:
           type: string
