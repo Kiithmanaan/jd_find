@@ -184,6 +184,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       searchRunId,
       ownerId: currentUser.status === "valid" ? currentUser.payload.sub : undefined,
       jobProfile: ownedJobProfile,
+      targetResultCount: body.targetResultCount,
       source:
         body.sourceType === "csv"
           ? {

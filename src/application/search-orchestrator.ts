@@ -30,7 +30,11 @@ export interface SearchOrchestratorDependencies {
 export class SearchOrchestrator {
   constructor(private readonly dependencies: SearchOrchestratorDependencies) {}
 
-  async runOneTimeSearch(jobProfile: JobProfile, ownerId: string | undefined): Promise<SearchRun> {
+  async runOneTimeSearch(
+    jobProfile: JobProfile,
+    ownerId: string | undefined,
+    targetResultCount?: number,
+  ): Promise<SearchRun> {
     const runnableJobProfile = normalizeConfirmedJobProfileVersion(jobProfile);
     const deps = this.dependencies;
 
@@ -57,7 +61,7 @@ export class SearchOrchestrator {
       searchRuns: deps.searchRuns,
     });
 
-    let searchRun = await setupService.execute(runnableJobProfile, ownerId);
+    let searchRun = await setupService.execute(runnableJobProfile, ownerId, targetResultCount);
 
     try {
       const acquired = await acquireService.execute(runnableJobProfile, searchRun);

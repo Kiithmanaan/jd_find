@@ -126,3 +126,15 @@ npm run web:build
 - `npm test`
 - `npm run web:build`
 ```
+
+## 8. 文档与代码契约联动
+
+当前 API 边界输入以 `src/api/schemas.ts` 的 Zod schema 作为请求校验事实源，`docs/openapi.yaml` 作为对外发布契约。代码类后续任务以 `docs/code-todo.md` 作为任务拆解事实源，非代码类事项以 `docs/non-code-todo.md` 为准。
+
+修改 API 字段、枚举、默认值、领域状态、任务状态或验收口径时，必须同步更新对应文档，并运行：
+
+```bash
+npm run contracts:check
+```
+
+该检查会校验 `SearchRunStatus`、`targetResultCount` 等 P0 契约在 Domain 类型、Zod schema、OpenAPI 和架构映射表之间保持一致，并确认 `docs/code-todo.md` 已接入 README、开发手册和任务关键词检查。

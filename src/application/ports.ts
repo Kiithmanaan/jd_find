@@ -72,6 +72,7 @@ export interface OneTimeSearchJob {
   searchRunId: string;
   ownerId?: string;
   jobProfile: JobProfile;
+  targetResultCount?: number;
   source: OneTimeSearchSource;
 }
 

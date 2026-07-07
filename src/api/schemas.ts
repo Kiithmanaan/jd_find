@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const stringList = z.array(nonEmptyString);
+const targetResultCountSchema = z.number().int().min(10).max(500).default(200);
 const optionalDate = z
   .union([z.string().datetime(), z.date()])
   .optional()
@@ -144,7 +145,7 @@ export const loginRequestSchema = z.object({
 const mockOneTimeSearchRequestSchema = z.object({
   jobProfile: jobProfileSchema,
   sourceType: z.literal("mock").optional(),
-  targetResultCount: z.number().int().min(10).max(500).optional(),
+  targetResultCount: targetResultCountSchema,
   candidates: z.array(candidateDraftSchema),
   riskSignal: riskSignalSchema.optional(),
 });
@@ -152,14 +153,14 @@ const mockOneTimeSearchRequestSchema = z.object({
 const csvOneTimeSearchRequestSchema = z.object({
   jobProfile: jobProfileSchema,
   sourceType: z.literal("csv"),
-  targetResultCount: z.number().int().min(10).max(500).optional(),
+  targetResultCount: targetResultCountSchema,
   csvFilePath: nonEmptyString,
 });
 
 const pluginOneTimeSearchRequestSchema = z.object({
   jobProfile: jobProfileSchema,
   sourceType: z.literal("plugin"),
-  targetResultCount: z.number().int().min(10).max(500).default(200),
+  targetResultCount: targetResultCountSchema,
 });
 
 export const oneTimeSearchRequestSchema = z.discriminatedUnion("sourceType", [

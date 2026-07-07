@@ -22,7 +22,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "web:build": "vite build --config web/vite.config.ts",
     "web:dev": "vite --config web/vite.config.ts",
-    "web:typecheck": "tsc -p web/tsconfig.json --noEmit"
+    "web:typecheck": "tsc -p web/tsconfig.json --noEmit",
+    "contracts:check": "node scripts/check-contracts.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

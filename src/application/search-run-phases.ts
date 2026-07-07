@@ -50,7 +50,11 @@ export class SetupSearchRunService {
     this.idGenerator = options.idGenerator;
   }
 
-  async execute(jobProfile: JobProfile, ownerId: string | undefined): Promise<SearchRun> {
+  async execute(
+    jobProfile: JobProfile,
+    ownerId: string | undefined,
+    targetResultCount: number | undefined,
+  ): Promise<SearchRun> {
     const runnableJobProfile = normalizeConfirmedJobProfileVersion(jobProfile);
 
     if (this.jobProfiles) {
@@ -61,7 +65,7 @@ export class SetupSearchRunService {
     }
 
     let searchRun = createSearchRun(runnableJobProfile, this.idGenerator(), {
-      targetResultCount: undefined,
+      targetResultCount,
       ownerId,
     });
     searchRun = startSearchRun(searchRun);

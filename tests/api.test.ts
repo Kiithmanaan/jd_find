@@ -73,6 +73,7 @@ test("API 启动一次性寻访时只入队并返回可查询的 searchRunId", a
   assert.equal(body.statusUrl, "/api/search-runs/api-run-1");
   const queuedJob = searchRunQueue.findJobById(body.jobId);
   assert.equal(queuedJob?.source.type, "mock");
+  assert.equal(queuedJob?.targetResultCount, 200);
 
   const saved = await searchRuns.findById("api-run-1");
   assert.equal(saved, undefined);
@@ -87,6 +88,7 @@ test("API 可在 worker 完成后查询 SearchRun 结果", async () => {
     url: "/api/search-runs/one-time",
     payload: {
       jobProfile: createConfirmedJobProfile(),
+      targetResultCount: 10,
       candidates: createCandidateDrafts(),
     },
   });
@@ -111,7 +113,7 @@ test("API 可在 worker 完成后查询 SearchRun 结果", async () => {
 
   const body = queryResponse.json();
   assert.equal(body.status, "Completed");
-  assert.equal(body.targetResultCount, 200);
+  assert.equal(body.targetResultCount, 10);
   assert.equal(body.candidates.length, 3);
 });
 

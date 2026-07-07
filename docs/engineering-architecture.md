@@ -66,7 +66,7 @@ JobProfile
 - 岗位画像未确认，不允许启动寻访。
 - 搜索条件必须在寻访前确认。
 - AI 可以建议条件，但猎头拥有最终确认权。
-- MVP 单次寻访目标规模固定为 200 份候选人结果。
+- MVP 单次寻访目标规模默认 200 份候选人结果；API 允许在 10-500 范围内显式配置，Domain 创建 SearchRun 时必须固化本次任务的 `targetResultCount` 快照。
 - 候选人去重范围限定在当前岗位画像或当前寻访任务内。
 - 候选人必须先经过硬筛，再进入软性匹配。
 - 匹配结果必须包含综合分、合适点和不合适点。
@@ -144,6 +144,24 @@ MVP 必须覆盖四个场景：
 - SCN-02：岗位画像调优循环，作为 P1 前置扩展点保留。
 - SCN-03：来源线索失效后的辅助找回。
 - SCN-04：风控风险触发后的寻访中止。
+
+
+### SearchRun 状态 / 事件 / 展示阶段映射
+
+`SearchRunStatus` 的代码枚举以 `src/domain/types.ts` 为准，OpenAPI、前端展示和运行手册必须通过下表保持语义一致。
+
+| Domain Status | 主事件 | 面向用户的阶段语义 | 说明 |
+| --- | --- | --- | --- |
+| Created | - | 已创建 | 领域对象刚创建，尚未启动执行。 |
+| Running | SearchStarted | 寻访中 | Worker 或插件 SearchRun 已启动。 |
+| Acquired | CandidateResultsAcquired | 已获取候选人 | 已接收来源候选人草稿。 |
+| Deduplicated | CandidateResultsDeduplicated | 已去重 | 已完成当前 SearchRun 内去重。 |
+| HardFiltered | HardFilterCompleted | 已硬筛 | 已完成硬性条件过滤。 |
+| Assessed | SoftMatchAssessed | 已评估 | 已完成 AI 软性匹配评估或插件增量评估。 |
+| Completed | SearchCompleted | 已完成 | 任务已进入可交付状态，候选人按结构化评分排序。 |
+| Interrupted | RiskControlTriggered / SearchInterrupted | 风控中止 | 来源风险优先，任务停止继续补齐候选人。 |
+| Failed | SearchFailed | 失败 | 系统异常或外部依赖异常，必须保留失败原因。 |
+| Cancelled | SearchInterrupted | 已取消 | 用户主动取消，后续队列任务不得继续推进。 |
 
 ## 3. 推荐总体架构
 

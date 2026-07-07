@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">JD Find SBR建模图</title>
+  <desc id="desc">基于Structure-Behavior-Relation方法，对猎头一次性寻访与AI辅助筛选MVP的结构、行为和关系建模。</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1976D2"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#388E3C"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#F57C00"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#D32F2F"/>
+    </marker>
+    <style>
+      .bg { fill: #FAFAFA; }
+      .band { fill: #FFFFFF; stroke: #E0E0E0; stroke-width: 1; }
+      .band-label { font: 600 16px "Microsoft YaHei", Arial, sans-serif; fill: #616161; }
+      .title { font: 700 28px "Microsoft YaHei", Arial, sans-serif; fill: #263238; }
+      .subtitle { font: 14px "Microsoft YaHei", Arial, sans-serif; fill: #607D8B; }
+      .node-title { font: 700 15px "Microsoft YaHei", Arial, sans-serif; fill: #263238; text-anchor: middle; }
+      .node-text { font: 12px "Microsoft YaHei", Arial, sans-serif; fill: #455A64; text-anchor: middle; }
+      .small { font: 11px "Microsoft YaHei", Arial, sans-serif; fill: #546E7A; text-anchor: middle; }
+      .label { font: 12px "Microsoft YaHei", Arial, sans-serif; fill: #37474F; }
+      .legend { font: 12px "Microsoft YaHei", Arial, sans-serif; fill: #455A64; }
+      .env { fill: #F5F5F5; stroke: #757575; stroke-width: 2; }
+      .input { fill: #E3F2FD; stroke: #1976D2; stroke-width: 2; }
+      .process { fill: #E8F5E9; stroke: #388E3C; stroke-width: 2; }
+      .control { fill: #F3E5F5; stroke: #7B1FA2; stroke-width: 2; }
+      .store { fill: #FFF9C4; stroke: #F9A825; stroke-width: 2; }
+      .output { fill: #FFE0B2; stroke: #E65100; stroke-width: 2; }
+      .data { stroke: #1976D2; stroke-width: 2.2; fill: none; marker-end: url(#arrow-blue); }
+      .control-line { stroke: #388E3C; stroke-width: 2; fill: none; stroke-dasharray: 8 4; marker-end: url(#arrow-green); }
+      .feedback { stroke: #F57C00; stroke-width: 2; fill: none; stroke-dasharray: 4 4; marker-end: url(#arrow-orange); }
+      .main { stroke: #D32F2F; stroke-width: 3.2; fill: none; marker-end: url(#arrow-red); }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900"/>
+  <text class="title" x="800" y="46" text-anchor="middle">JD Find MVP：一次性寻访与AI辅助筛选 SBR模型</text>
+  <text class="subtitle" x="800" y="72" text-anchor="middle">结构：分层组件 | 行为：SearchRun状态推进 | 关系：数据流、控制流、审计反馈</text>
+
+  <rect class="band" x="60" y="95" width="1480" height="135" rx="8"/>
+  <rect class="band" x="60" y="255" width="1480" height="170" rx="8"/>
+  <rect class="band" x="60" y="450" width="1480" height="185" rx="8"/>
+  <rect class="band" x="60" y="660" width="1480" height="150" rx="8"/>
+  <text class="band-label" x="88" y="124">外部与入口层</text>
+  <text class="band-label" x="88" y="284">编排与领域层</text>
+  <text class="band-label" x="88" y="479">采集、过滤、AI评估层</text>
+  <text class="band-label" x="88" y="689">持久化、审计、交付层</text>
+
+  <path class="env" d="M145 153 C145 128 175 124 186 140 C199 112 246 117 252 148 C281 145 302 166 292 194 C281 222 165 224 149 201 C139 187 139 166 145 153 Z"/>
+  <text class="node-title" x="218" y="167">猎头顾问</text>
+  <text class="node-text" x="218" y="187">确认画像/启动寻访</text>
+  <text class="small" x="218" y="204">人工最终判断</text>
+
+  <rect class="input" x="410" y="130" width="180" height="78" rx="10"/>
+  <text class="node-title" x="500" y="160">Web App</text>
+  <text class="node-text" x="500" y="181">任务看板/候选人列表</text>
+  <text class="small" x="500" y="198">回链入口</text>
+
+  <rect class="input" x="705" y="130" width="190" height="78" rx="8"/>
+  <text class="node-title" x="800" y="160">API/Auth</text>
+  <text class="node-text" x="800" y="181">Zod校验/JWT</text>
+  <text class="small" x="800" y="198">Web Token / Plugin Token</text>
+
+  <rect class="input" x="1015" y="130" width="200" height="78" rx="8"/>
+  <text class="node-title" x="1115" y="160">Plugin/CSV入口</text>
+  <text class="node-text" x="1115" y="181">候选人批量提交</text>
+  <text class="small" x="1115" y="198">schema校验/去敏边界</text>
+
+  <polygon class="control" points="280,315 315,280 485,280 520,315 485,350 315,350"/>
+  <text class="node-title" x="400" y="308">SearchRun编排</text>
+  <text class="node-text" x="400" y="328">创建/派发/恢复</text>
+  <text class="small" x="400" y="344">失败原因与事件</text>
+
+  <rect class="process" x="690" y="278" width="220" height="90" rx="14"/>
+  <text class="node-title" x="800" y="306">Domain规则</text>
+  <text class="node-text" x="800" y="328">JobProfile/SearchRun</text>
+  <text class="node-text" x="800" y="346">HardFilter/SourceLink</text>
+
+  <rect class="process" x="1060" y="278" width="220" height="90" rx="10"/>
+  <text class="node-title" x="1170" y="306">Queue/Worker</text>
+  <text class="node-text" x="1170" y="328">异步执行/重试</text>
+  <text class="small" x="1170" y="348">cancelled不得推进</text>
+
+  <rect class="process" x="265" y="510" width="200" height="88" rx="8"/>
+  <text class="node-title" x="365" y="540">Source Adapter</text>
+  <text class="node-text" x="365" y="561">Mock/CSV/Plugin</text>
+  <text class="small" x="365" y="579">riskSignal优先</text>
+
+  <polygon class="control" points="684,555 720,510 880,510 916,555 880,600 720,600"/>
+  <text class="node-title" x="800" y="546">硬筛/AI评估</text>
+  <text class="node-text" x="800" y="568">先硬筛，再软匹配</text>
+  <text class="small" x="800" y="586">AI输出经契约校验</text>
+
+  <rect class="output" x="1110" y="510" width="230" height="88" rx="10"/>
+  <text class="node-title" x="1225" y="540">候选人结果</text>
+  <text class="node-text" x="1225" y="561">评分/解释/排序</text>
+  <text class="small" x="1225" y="579">原始页面回链</text>
+
+  <ellipse class="store" cx="515" cy="735" rx="145" ry="50"/>
+  <text class="node-title" x="515" y="724">Prisma/Postgres</text>
+  <text class="node-text" x="515" y="745">任务/候选人/版本</text>
+  <text class="small" x="515" y="762">不暴露storagePath</text>
+
+  <ellipse class="store" cx="900" cy="735" rx="150" ry="50"/>
+  <text class="node-title" x="900" y="724">AI审计/事件</text>
+  <text class="node-text" x="900" y="745">prompt/model/graph</text>
+  <text class="small" x="900" y="762">输入输出快照</text>
+
+  <rect class="output" x="1205" y="696" width="210" height="78" rx="10"/>
+  <text class="node-title" x="1310" y="725">交付闭环</text>
+  <text class="node-text" x="1310" y="746">结果查看/人工沟通</text>
+  <text class="small" x="1310" y="763">系统不自动触达</text>
+
+  <path class="main" d="M300,170 C350,168 370,168 410,169"/>
+  <text class="label" x="334" y="154">①操作</text>
+  <path class="main" d="M590,169 C630,169 665,169 705,169"/>
+  <text class="label" x="625" y="154">②请求</text>
+  <path class="main" d="M795,208 C760,246 610,268 520,307"/>
+  <text class="label" x="610" y="246">③创建SearchRun</text>
+  <path class="main" d="M520,315 C585,314 620,318 690,322"/>
+  <text class="label" x="574" y="302">④规则校验</text>
+  <path class="main" d="M910,322 C975,322 1015,322 1060,322"/>
+  <text class="label" x="965" y="306">⑤派发</text>
+  <path class="main" d="M1110,368 C1010,460 590,460 455,514"/>
+  <text class="label" x="765" y="447">⑥采集候选人</text>
+  <path class="main" d="M465,554 C540,552 612,552 684,554"/>
+  <text class="label" x="542" y="538">⑦草稿</text>
+  <path class="main" d="M916,555 C988,555 1040,555 1110,554"/>
+  <text class="label" x="988" y="538">⑧评估结果</text>
+  <path class="main" d="M1260,598 C1278,630 1294,665 1304,696"/>
+  <text class="label" x="1300" y="648">⑨交付</text>
+
+  <path class="data" d="M1115,208 C1116,245 1128,260 1168,278"/>
+  <text class="label" x="1130" y="248">插件提交</text>
+  <path class="data" d="M365,598 C380,660 420,700 515,735"/>
+  <text class="label" x="383" y="653">候选人/回链</text>
+  <path class="data" d="M800,600 C815,650 842,700 900,735"/>
+  <text class="label" x="828" y="666">审计快照</text>
+  <path class="data" d="M1225,598 C1168,665 1045,705 900,735"/>
+  <text class="label" x="1050" y="676">评分与解释</text>
+
+  <path class="control-line" d="M1170,368 C1160,430 925,448 800,510"/>
+  <text class="label" x="980" y="426">调用评估</text>
+  <path class="control-line" d="M1170,368 C1248,405 1300,455 1225,510"/>
+  <text class="label" x="1285" y="442">状态推进</text>
+
+  <path class="feedback" d="M365,510 C300,435 250,365 280,315"/>
+  <text class="label" x="262" y="424">风控中止</text>
+  <path class="feedback" d="M900,785 C870,848 350,845 315,350"/>
+  <text class="label" x="604" y="842">事件/失败原因反馈</text>
+  <path class="feedback" d="M1415,735 C1515,650 1515,250 1215,170"/>
+  <text class="label" x="1435" y="470">回链状态</text>
+
+  <rect x="92" y="828" width="580" height="46" rx="8" fill="#FFFFFF" stroke="#CFD8DC"/>
+  <text class="legend" x="112" y="846">图例：圆角矩形=有状态/功能组件；六边形=控制/决策；椭圆=存储/审计；云形=外部参与者</text>
+  <text class="legend" x="112" y="865">红粗线=主流程；蓝实线=数据流；绿虚线=控制流；橙点线=反馈/风控/审计</text>
+
+  <rect x="940" y="828" width="568" height="46" rx="8" fill="#FFFFFF" stroke="#CFD8DC"/>
+  <text class="legend" x="960" y="846">SBR前置分析：结构保留9个核心组件；行为围绕SearchRun一次性寻访；关系突出身份边界、状态机、AI审计和原始回链。</text>
+  <text class="legend" x="960" y="865">简化项：未展开ATS、多租户、RBAC、对象存储；MVP阶段暂作为后续生产化能力。</text>
+</svg>

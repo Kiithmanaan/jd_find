@@ -11,6 +11,7 @@ test("内存队列保存一次性寻访任务载荷，JobHandler 可执行同一
   const job = {
     searchRunId: "handler-run-1",
     jobProfile: createConfirmedJobProfile(),
+    targetResultCount: 10,
     source: {
       type: "mock" as const,
       candidates: createCandidateDrafts(),
@@ -32,5 +33,8 @@ test("内存队列保存一次性寻访任务载荷，JobHandler 可执行同一
   const result = await handler.handleOneTimeSearch(queuedJob!);
 
   assert.equal(result.status, "Completed");
-  assert.equal((await searchRuns.findById("handler-run-1"))?.status, "Completed");
+  assert.equal(result.targetResultCount, 10);
+  const saved = await searchRuns.findById("handler-run-1");
+  assert.equal(saved?.status, "Completed");
+  assert.equal(saved?.targetResultCount, 10);
 });
