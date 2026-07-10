@@ -18,7 +18,7 @@
     "start": "node dist/src/api/server.js",
     "user:create": "node dist/src/scripts/create-user.js",
     "worker:search": "node dist/src/workers/search-run-worker.js",
-    "test": "npm run build && node --test dist/tests",
+    "test": "npm run build && node --test \"dist/tests/*.test.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "web:build": "vite build --config web/vite.config.ts",
     "web:dev": "vite --config web/vite.config.ts",
@@ -51,7 +51,6 @@
     "react-dom": "^19.2.7",
     "tailwindcss": "^4.3.0",
     "vaul": "^1.1.2",
-    "wouter": "^3.3.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

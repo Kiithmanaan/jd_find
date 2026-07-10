@@ -309,6 +309,60 @@ function escapeCsv(value: string): string {
   return value;
 }
 
+export interface ApiJobProfileVersion {
+  id: string; jobProfileId: string; version: number; title: string; jdText: string;
+  searchCondition: Record<string, unknown>; hardRequirements: unknown[]; softRequirements: unknown[];
+  status: "Draft" | "Confirmed"; createdAt: string; confirmedAt?: string;
+}
+
+export interface ApiCandidate {
+  id: string; fingerprint: string; status: string;
+  resume: { name: string; title: string; city: string; educationLevel: string; yearsOfExperience: number };
+  sourceLead: { platform: string; url?: string; normalizedUrl?: string; verificationStatus?: string; riskLevel?: string };
+  matchAssessment?: { score: number; recommendation: string; recommendationReason: string };
+}
+
+export interface ApiSearchRun {
+  id: string; jobProfileId: string; status: string; targetResultCount: number; rawSubmittedCount: number;
+  candidates: ApiCandidate[]; failureReason?: string; interruptedReason?: string;
+}
+
+let webToken = localStorage.getItem("jd-search-token") ?? "";
+
+async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: { "content-type": "application/json", ...(webToken ? { authorization: `Bearer ${webToken}` } : {}), ...init.headers },
+  });
+  if (response.status === 401) { webToken = ""; localStorage.removeItem("jd-search-token"); }
+  const body = await response.json() as T & { message?: string; error?: string };
+  if (!response.ok) throw new Error(body.message ?? body.error ?? `请求失败 (${response.status})`);
+  return body;
+}
+
+export const realApi = {
+  async login(email: string, password: string): Promise<void> {
+    const result = await apiRequest<{ token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    webToken = result.token; localStorage.setItem("jd-search-token", result.token);
+  },
+  hasToken: (): boolean => Boolean(webToken),
+  logout: (): void => { webToken = ""; localStorage.removeItem("jd-search-token"); },
+  versions: (profileId: string) => apiRequest<{ currentVersionId?: string; versions: ApiJobProfileVersion[] }>(`/api/job-profiles/${profileId}/versions`),
+  createDraft: (profileId: string, source: ApiJobProfileVersion) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, { method: "POST", body: JSON.stringify({ title: source.title, jdText: source.jdText, searchCondition: source.searchCondition, hardRequirements: source.hardRequirements, softRequirements: source.softRequirements }) }),
+  confirmVersion: (profileId: string, versionId: string) => apiRequest<unknown>(`/api/job-profiles/${profileId}/versions/${versionId}/confirm`, { method: "POST" }),
+  createRun: (version: ApiJobProfileVersion, targetResultCount: number) => apiRequest<{ searchRunId: string }>("/api/search-runs/one-time", {
+    method: "POST", body: JSON.stringify({ sourceType: "plugin", targetResultCount, jobProfile: {
+      id: version.jobProfileId, title: version.title, jdText: version.jdText, status: "Confirmed", currentVersionId: version.id,
+      searchCondition: version.searchCondition, hardRequirements: version.hardRequirements, softRequirements: version.softRequirements,
+    } }),
+  }),
+  run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),
+  cancel: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}/cancel`, { method: "POST" }),
+  candidates: (profileId: string) => apiRequest<{ currentVersionCandidates: ApiCandidate[]; staleVersionCandidates: ApiCandidate[] }>(`/api/job-profiles/${profileId}/candidates`),
+  audits: (runId: string) => apiRequest<{ records: Array<{ id: string; status: string; provider: string; model: string; durationMs: number }> }>(`/api/search-runs/${runId}/ai-assessment-audits`),
+  reassess: (profileId: string) => apiRequest<{ reassessedCount: number }>(`/api/job-profiles/${profileId}/reassess-candidates`, { method: "POST" }),
+};
+
 /** 重试失败的 SearchRun — 重置为 Running */
 export async function retrySearchRun(id: string): Promise<SearchRun | undefined> {
   await delay(300);
