@@ -7,9 +7,8 @@ import type {
   OneTimeSearchJob,
   SearchRunRepository,
   SourceAdapter,
+  CandidateAssessmentRepository,
 } from "./ports.js";
-import { MockSourceAdapter } from "../infrastructure/mock/mock-source-adapter.js";
-import { CsvSourceAdapter } from "../infrastructure/csv/csv-source-adapter.js";
 import type { SearchRun } from "../domain/types.js";
 
 export interface SearchRunJobHandlerDependencies {
@@ -18,16 +17,15 @@ export interface SearchRunJobHandlerDependencies {
   jobProfiles?: JobProfileRepository;
   jobProfileVersions?: JobProfileVersionRepository;
   searchRuns?: SearchRunRepository;
-  sourceAdapterFactory?: (job: OneTimeSearchJob) => SourceAdapter;
+  sourceAdapterFactory: (job: OneTimeSearchJob) => SourceAdapter;
+  candidateAssessments?: CandidateAssessmentRepository;
 }
 
 export class SearchRunJobHandler {
   constructor(private readonly dependencies: SearchRunJobHandlerDependencies) {}
 
   async handleOneTimeSearch(job: OneTimeSearchJob): Promise<SearchRun> {
-    const sourceAdapter =
-      this.dependencies.sourceAdapterFactory?.(job) ??
-      createSourceAdapterForJob(job);
+    const sourceAdapter = this.dependencies.sourceAdapterFactory(job);
 
     const orchestrator = new SearchOrchestrator({
       sourceAdapter,
@@ -37,24 +35,9 @@ export class SearchRunJobHandler {
       jobProfileVersions: this.dependencies.jobProfileVersions,
       searchRuns: this.dependencies.searchRuns,
       idGenerator: () => job.searchRunId,
+      candidateAssessments: this.dependencies.candidateAssessments,
     });
 
     return orchestrator.runOneTimeSearch(job.jobProfile, job.ownerId, job.targetResultCount);
-  }
-}
-
-function createSourceAdapterForJob(job: OneTimeSearchJob): SourceAdapter {
-  switch (job.source.type) {
-    case "mock":
-      return new MockSourceAdapter({
-        candidates: job.source.candidates,
-        riskSignal: job.source.riskSignal,
-      });
-    case "csv":
-      return new CsvSourceAdapter({
-        filePath: job.source.csvFilePath,
-      });
-    case "plugin":
-      throw new Error("Plugin search runs are processed through ingestion APIs.");
   }
 }

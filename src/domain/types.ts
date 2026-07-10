@@ -192,20 +192,56 @@ export interface AIAssessmentAuditRecord {
   createdAt: Date;
 }
 
-export interface SourceLead {
+export type SourceVerificationStatus = "unverified" | "active" | "expired" | "fallback_only";
+export type SourceRiskLevel = "low" | "medium" | "high";
+
+export interface OriginalSourceLink {
+  id?: string;
   platform: string;
   url?: string;
+  originalUrl?: string;
+  normalizedUrl?: string;
+  externalId?: string;
   searchContext: string;
   fallbackClues: string[];
   expired?: boolean;
+  verificationStatus?: SourceVerificationStatus;
+  status?: SourceVerificationStatus;
+  lastVerifiedAt?: Date;
+  riskLevel?: SourceRiskLevel;
+  createdAt?: Date;
 }
+
+export type SourceLead = OriginalSourceLink;
 
 export interface ResumeAttachment {
   filename: string;
   contentType: string;
   sizeBytes: number;
-  storagePath: string;
+  storageKey: string;
   uploadedAt: Date;
+}
+
+export interface PluginCandidateBatch {
+  searchRunId: Identifier;
+  batchId: string;
+  requestDigest: string;
+  candidateCount: number;
+  status: "processing" | "completed" | "failed";
+  failureReason?: string;
+}
+
+export interface CandidateAssessmentRecord {
+  id: Identifier;
+  candidateId: Identifier;
+  candidateFingerprint: string;
+  searchRunId: Identifier;
+  jobProfileId: Identifier;
+  jobProfileVersionId: Identifier;
+  auditId?: Identifier;
+  assessmentType: "initial" | "reassessment";
+  assessment: MatchAssessment;
+  createdAt: Date;
 }
 
 export interface CandidateResult {

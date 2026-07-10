@@ -6,6 +6,10 @@ import type {
   JobProfileVersionRepository,
   SearchRunRepository,
   UserRepository,
+  PluginCandidateBatchRepository,
+  PluginBatchClaim,
+  CandidateAssessmentRepository,
+  ReassessmentLockRepository,
 } from "../../application/ports.js";
 import type {
   AIAssessmentAuditRecord,
@@ -15,7 +19,65 @@ import type {
   JobProfileVersion,
   SearchRun,
   User,
+  PluginCandidateBatch,
+  CandidateAssessmentRecord,
 } from "../../domain/types.js";
+
+export class InMemoryPluginCandidateBatchRepository implements PluginCandidateBatchRepository {
+  private readonly records = new Map<string, PluginCandidateBatch>();
+
+  async claim(batch: PluginCandidateBatch): Promise<PluginBatchClaim> {
+    const key = `${batch.searchRunId}:${batch.batchId}`;
+    const existing = this.records.get(key);
+    if (!existing) {
+      this.records.set(key, structuredClone(batch));
+      return "claimed";
+    }
+    if (existing.requestDigest !== batch.requestDigest) return "conflict";
+    if (existing.status === "completed" || existing.status === "processing") return "duplicate";
+    this.records.set(key, structuredClone(batch));
+    return "retry";
+  }
+
+  async complete(searchRunId: string, batchId: string): Promise<void> {
+    this.update(searchRunId, batchId, "completed");
+  }
+
+  async fail(searchRunId: string, batchId: string, reason: string): Promise<void> {
+    this.update(searchRunId, batchId, "failed", reason);
+  }
+
+  private update(searchRunId: string, batchId: string, status: PluginCandidateBatch["status"], failureReason?: string): void {
+    const key = `${searchRunId}:${batchId}`;
+    const record = this.records.get(key);
+    if (record) this.records.set(key, { ...record, status, failureReason });
+  }
+}
+
+export class InMemoryReassessmentLockRepository implements ReassessmentLockRepository {
+  private readonly running = new Set<string>();
+  async tryAcquire(jobProfileId: string, versionId: string): Promise<boolean> {
+    const key = `${jobProfileId}:${versionId}`;
+    if (this.running.has(key)) return false;
+    this.running.add(key); return true;
+  }
+  async release(jobProfileId: string, versionId: string): Promise<void> { this.running.delete(`${jobProfileId}:${versionId}`); }
+}
+
+export class InMemoryCandidateAssessmentRepository implements CandidateAssessmentRepository {
+  private readonly records: CandidateAssessmentRecord[] = [];
+  async append(record: CandidateAssessmentRecord): Promise<void> { this.records.push(structuredClone(record)); }
+  async findLatestByJobProfileVersion(jobProfileId: string, jobProfileVersionId: string): Promise<CandidateAssessmentRecord[]> {
+    const latest = new Map<string, CandidateAssessmentRecord>();
+    for (const record of this.records) {
+      if (record.jobProfileId === jobProfileId && record.jobProfileVersionId === jobProfileVersionId) {
+        const current = latest.get(record.candidateFingerprint);
+        if (!current || current.createdAt < record.createdAt) latest.set(record.candidateFingerprint, record);
+      }
+    }
+    return [...latest.values()].map((record) => structuredClone(record));
+  }
+}
 
 export class InMemoryUserRepository implements UserRepository {
   private readonly records = new Map<string, User>();

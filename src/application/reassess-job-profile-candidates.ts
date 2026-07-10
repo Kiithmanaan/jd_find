@@ -6,13 +6,14 @@ import {
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
 import { applyHardFilter, applySoftAssessments } from "../domain/search-run.js";
 import type { CandidateResult, JobProfile, MatchAssessment, SearchRun } from "../domain/types.js";
-import type { AIAssessmentAuditSink, AIAssessmentPort, SearchRunRepository } from "./ports.js";
+import type { AIAssessmentAuditSink, AIAssessmentPort, CandidateAssessmentRepository, SearchRunRepository } from "./ports.js";
 
 export interface ReassessJobProfileCandidatesDependencies {
   searchRuns: SearchRunRepository;
   aiAssessment: AIAssessmentPort;
   aiAssessmentAudit?: AIAssessmentAuditSink;
   auditIdGenerator: () => string;
+  candidateAssessments?: CandidateAssessmentRepository;
 }
 
 export interface ReassessJobProfileCandidatesResult {
@@ -51,26 +52,25 @@ export async function reassessJobProfileCandidates(
     await dependencies.aiAssessment.assessCandidates(jobProfile, hardPassedCandidates),
   );
   const assessedRun = applySoftAssessments(reassessmentRun, assessments);
-  const latestByFingerprint = new Map(
-    assessedRun.candidates.map((candidate) => [candidate.fingerprint, candidate]),
+  const auditSearchRun = searchRuns[0] ?? reassessmentRun;
+  const auditId = await recordReassessmentAudit(
+    auditSearchRun, jobProfile, hardPassedCandidates, assessments,
+    Date.now() - assessmentStartedAt, dependencies,
   );
-  const affectedSearchRunIds: string[] = [];
-
-  for (const searchRun of searchRuns) {
-    const updatedSearchRun = replaceCandidatesByFingerprint(searchRun, latestByFingerprint);
-    if (updatedSearchRun !== searchRun) {
-      await dependencies.searchRuns.save(updatedSearchRun);
-      affectedSearchRunIds.push(updatedSearchRun.id);
-      await recordReassessmentAudit(
-        updatedSearchRun,
-        jobProfile,
-        updatedSearchRun.candidates.filter((candidate) => assessments.has(candidate.id)),
-        assessments,
-        Date.now() - assessmentStartedAt,
-        dependencies,
-      );
-    }
+  const assessedById = new Map(assessedRun.candidates.map((candidate) => [candidate.id, candidate]));
+  for (const candidate of hardPassedCandidates) {
+    const assessed = assessedById.get(candidate.id);
+    if (!assessed?.matchAssessment) continue;
+    await dependencies.candidateAssessments?.append({
+      id: crypto.randomUUID(), candidateId: candidate.id, candidateFingerprint: candidate.fingerprint,
+      searchRunId: candidate.searchRunId, jobProfileId: jobProfile.id,
+      jobProfileVersionId: jobProfile.currentVersionId, auditId,
+      assessmentType: "reassessment", assessment: assessed.matchAssessment, createdAt: new Date(),
+    });
   }
+  const affectedSearchRunIds = searchRuns
+    .filter((run) => run.candidates.some((candidate) => assessedById.has(candidate.id)))
+    .map((run) => run.id);
 
   return {
     jobProfileId: jobProfile.id,
@@ -111,37 +111,6 @@ function createSyntheticSearchRun(
   };
 }
 
-function replaceCandidatesByFingerprint(
-  searchRun: SearchRun,
-  latestByFingerprint: Map<string, CandidateResult>,
-): SearchRun {
-  let changed = false;
-  const candidates = searchRun.candidates.map((candidate) => {
-    const reassessed = latestByFingerprint.get(candidate.fingerprint);
-    if (!reassessed) {
-      return candidate;
-    }
-
-    changed = true;
-    return {
-      ...candidate,
-      status: reassessed.status,
-      hardRejectReasons: reassessed.hardRejectReasons,
-      matchAssessment: reassessed.matchAssessment,
-    };
-  });
-
-  if (!changed) {
-    return searchRun;
-  }
-
-  return {
-    ...searchRun,
-    candidates,
-    updatedAt: new Date(),
-  };
-}
-
 async function recordReassessmentAudit(
   searchRun: SearchRun,
   jobProfile: JobProfile,
@@ -149,13 +118,14 @@ async function recordReassessmentAudit(
   assessments: Map<string, MatchAssessment>,
   durationMs: number,
   dependencies: ReassessJobProfileCandidatesDependencies,
-): Promise<void> {
+): Promise<string | undefined> {
   if (!dependencies.aiAssessmentAudit || candidates.length === 0) {
-    return;
+    return undefined;
   }
 
+  const auditId = dependencies.auditIdGenerator();
   await dependencies.aiAssessmentAudit.record({
-    id: dependencies.auditIdGenerator(),
+    id: auditId,
     searchRunId: searchRun.id,
     jobProfileId: jobProfile.id,
     jobProfileVersionId: jobProfile.currentVersionId,
@@ -189,6 +159,7 @@ async function recordReassessmentAudit(
     status: "success",
     createdAt: new Date(),
   });
+  return auditId;
 }
 
 function createMatchAssessmentPrompt(jobProfile: JobProfile, candidates: CandidateResult[]): string {

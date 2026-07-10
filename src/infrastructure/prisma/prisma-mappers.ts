@@ -337,7 +337,8 @@ function reviveResumeAttachment(value: Prisma.JsonValue | null): CandidateResult
     return undefined;
   }
 
-  const attachment = value as unknown as NonNullable<CandidateResult["resumeAttachment"]>;
+  const raw = value as unknown as NonNullable<CandidateResult["resumeAttachment"]> & { storagePath?: string };
+  const attachment = { ...raw, storageKey: raw.storageKey ?? raw.storagePath ?? "" };
   return {
     ...attachment,
     uploadedAt: new Date(attachment.uploadedAt),

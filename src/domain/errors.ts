@@ -11,3 +11,14 @@ export class DomainError extends Error {
     this.name = "DomainError";
   }
 }
+
+export class BatchConflictError extends DomainError {
+  constructor() {
+    super("The batchId was already used with different candidate content.");
+    this.name = "BatchConflictError";
+  }
+}
+
+export class ReassessmentInProgressError extends DomainError {
+  constructor() { super("A reassessment is already running for this job profile version."); this.name = "ReassessmentInProgressError"; }
+}

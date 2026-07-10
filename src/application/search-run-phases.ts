@@ -28,6 +28,7 @@ import type {
   JobProfileVersionRepository,
   SearchRunRepository,
   SourceAdapter,
+  CandidateAssessmentRepository,
 } from "./ports.js";
 
 // ─── Phase 1: 创建并启动 SearchRun ──────────────────────────────
@@ -129,17 +130,20 @@ export class AssessmentPhaseService {
   private readonly aiAssessmentAudit: AIAssessmentAuditSink | undefined;
   private readonly searchRuns: SearchRunRepository | undefined;
   private readonly auditIdGenerator: () => string;
+  private readonly candidateAssessments: CandidateAssessmentRepository | undefined;
 
   constructor(options: {
     aiAssessment: AIAssessmentPort;
     aiAssessmentAudit?: AIAssessmentAuditSink;
     searchRuns?: SearchRunRepository;
     auditIdGenerator: () => string;
+    candidateAssessments?: CandidateAssessmentRepository;
   }) {
     this.aiAssessment = options.aiAssessment;
     this.aiAssessmentAudit = options.aiAssessmentAudit;
     this.searchRuns = options.searchRuns;
     this.auditIdGenerator = options.auditIdGenerator;
+    this.candidateAssessments = options.candidateAssessments;
   }
 
   async execute(jobProfile: JobProfile, searchRun: SearchRun): Promise<SearchRun> {
@@ -154,7 +158,16 @@ export class AssessmentPhaseService {
         hardPassedCandidates,
         await this.aiAssessment.assessCandidates(jobProfile, hardPassedCandidates),
       );
-      await this.recordAudit(searchRun, jobProfile, hardPassedCandidates, assessments, assessmentStartedAt, undefined);
+      const auditId = await this.recordAudit(searchRun, jobProfile, hardPassedCandidates, assessments, assessmentStartedAt, undefined);
+      for (const candidate of hardPassedCandidates) {
+        const assessment = assessments.get(candidate.id);
+        if (assessment) await this.candidateAssessments?.append({
+          id: crypto.randomUUID(), candidateId: candidate.id, candidateFingerprint: candidate.fingerprint,
+          searchRunId: searchRun.id, jobProfileId: jobProfile.id,
+          jobProfileVersionId: searchRun.jobProfileVersionId, auditId,
+          assessmentType: "initial", assessment, createdAt: new Date(),
+        });
+      }
     } catch (error) {
       await this.recordAudit(searchRun, jobProfile, hardPassedCandidates, new Map(), assessmentStartedAt, error);
       throw error;
@@ -175,14 +188,15 @@ export class AssessmentPhaseService {
     assessments: Map<string, MatchAssessment>,
     startedAt: number,
     error: unknown | undefined,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     if (!this.aiAssessmentAudit || candidates.length === 0) {
-      return;
+      return undefined;
     }
 
     const durationMs = Date.now() - startedAt;
+    const auditId = this.auditIdGenerator();
     await this.aiAssessmentAudit.record({
-      id: this.auditIdGenerator(),
+      id: auditId,
       searchRunId: searchRun.id,
       jobProfileId: jobProfile.id,
       jobProfileVersionId: searchRun.jobProfileVersionId,
@@ -218,6 +232,7 @@ export class AssessmentPhaseService {
       errorMessage: error instanceof Error ? error.message : error ? "Unknown AI assessment error." : undefined,
       createdAt: new Date(),
     });
+    return auditId;
   }
 }
 

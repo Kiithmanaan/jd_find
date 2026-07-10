@@ -99,6 +99,8 @@ model SearchRunRecord {
   events             SearchEventRecord[]
   candidates         CandidateResultRecord[]
   aiAssessmentAudits AIAssessmentAuditRecord[]
+  pluginCandidateBatches PluginCandidateBatchRecord[]
+  candidateAssessments CandidateAssessmentRecord[]
   createdAt          DateTime
   updatedAt          DateTime
   jobProfile         JobProfileRecord        @relation(fields: [jobProfileId], references: [id])
@@ -107,6 +109,49 @@ model SearchRunRecord {
   @@index([jobProfileId])
   @@index([jobProfileVersionId])
   @@index([status])
+}
+
+model PluginCandidateBatchRecord {
+  id             String   @id @default(cuid())
+  searchRunId    String
+  batchId        String
+  requestDigest  String
+  candidateCount Int
+  status         String
+  failureReason  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  searchRun      SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@unique([searchRunId, batchId])
+  @@index([searchRunId, status])
+}
+
+model CandidateAssessmentRecord {
+  id                  String   @id
+  candidateId         String
+  candidateFingerprint String
+  searchRunId         String
+  jobProfileId        String
+  jobProfileVersionId String
+  auditId             String?
+  assessmentType      String
+  assessment          Json
+  createdAt           DateTime @default(now())
+  searchRun           SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([candidateFingerprint, jobProfileVersionId, createdAt])
+  @@index([searchRunId])
+}
+
+model ReassessmentLockRecord {
+  id                  String   @id @default(cuid())
+  jobProfileId        String
+  jobProfileVersionId String
+  running             Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([jobProfileId, jobProfileVersionId])
 }
 
 model AIAssessmentAuditRecord {

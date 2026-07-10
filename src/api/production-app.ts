@@ -7,6 +7,9 @@ import {
   PrismaJobProfileVersionRepository,
   PrismaSearchRunRepository,
   PrismaUserRepository,
+  PrismaPluginCandidateBatchRepository,
+  PrismaCandidateAssessmentRepository,
+  PrismaReassessmentLockRepository,
 } from "../infrastructure/prisma/prisma-repositories.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
 import { createAIAssessmentFromEnv } from "../infrastructure/ai/create-ai-assessment.js";
@@ -38,7 +41,11 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     aiAssessmentAudits: new PrismaAIAssessmentAuditSink(prisma),
     aiAssessment: createAIAssessmentFromEnv(process.env),
     searchRunQueue,
+    pluginAggregationQueue: searchRunQueue,
     users: new PrismaUserRepository(prisma),
+    pluginCandidateBatches: new PrismaPluginCandidateBatchRepository(prisma),
+    candidateAssessments: new PrismaCandidateAssessmentRepository(prisma),
+    reassessmentLocks: new PrismaReassessmentLockRepository(prisma),
     auth: {
       enabled: true,
       jwtSecret,

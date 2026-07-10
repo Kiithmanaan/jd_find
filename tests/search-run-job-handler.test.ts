@@ -4,6 +4,7 @@ import { SearchRunJobHandler } from "../src/application/search-run-job-handler.j
 import { InMemorySearchRunQueue } from "../src/infrastructure/memory/in-memory-search-run-queue.js";
 import { InMemorySearchRunRepository } from "../src/infrastructure/memory/in-memory-repositories.js";
 import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.js";
+import { createSourceAdapter } from "../src/infrastructure/source/create-source-adapter.js";
 import { createCandidateDrafts, createConfirmedJobProfile } from "./fixtures.js";
 
 test("内存队列保存一次性寻访任务载荷，JobHandler 可执行同一业务闭环", async () => {
@@ -28,6 +29,7 @@ test("内存队列保存一次性寻访任务载荷，JobHandler 可执行同一
   const handler = new SearchRunJobHandler({
     aiAssessment: new MockAIAssessment(),
     searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
   });
 
   const result = await handler.handleOneTimeSearch(queuedJob!);

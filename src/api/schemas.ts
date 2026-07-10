@@ -174,7 +174,7 @@ export const oneTimeSearchRequestSchema = z.discriminatedUnion("sourceType", [
 export type OneTimeSearchRequestBody = z.infer<typeof oneTimeSearchRequestSchema>;
 
 export const pluginCandidateSubmissionSchema = z.object({
-  batchId: nonEmptyString.optional(),
+  batchId: nonEmptyString,
   sourcePlatform: nonEmptyString.optional(),
   candidates: z.array(candidateDraftSchema).min(1),
 });

@@ -17,11 +17,10 @@ import {
   InMemoryUserRepository,
 } from "../src/infrastructure/memory/in-memory-repositories.js";
 import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.js";
+import { createSourceAdapter } from "../src/infrastructure/source/create-source-adapter.js";
 import { createCandidateDrafts, createConfirmedJobProfile, createDraftJobProfile } from "./fixtures.js";
 
-const workspaceRoot = fileURLToPath(new URL("..", import.meta.url)).includes("/dist/")
-  ? join(fileURLToPath(new URL("..", import.meta.url)).split("/dist/")[0]!)
-  : fileURLToPath(new URL("..", import.meta.url));
+const workspaceRoot = fileURLToPath(new URL(import.meta.url.includes("/dist/") ? "../.." : "..", import.meta.url));
 const csvFixturePath = join(workspaceRoot, "tests", "fixtures", "candidates.csv");
 
 test("健康检查返回 ok", async () => {
@@ -102,6 +101,7 @@ test("API 可在 worker 完成后查询 SearchRun 结果", async () => {
   const handler = new SearchRunJobHandler({
     aiAssessment: new MockAIAssessment(),
     searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
   });
   await handler.handleOneTimeSearch(queuedJob);
 
@@ -143,6 +143,7 @@ test("API 可查询一次寻访对应的 AI 评估审计快照", async () => {
     aiAssessment: new MockAIAssessment(),
     aiAssessmentAudit: aiAssessmentAudits,
     searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
   });
   await handler.handleOneTimeSearch(queuedJob);
 
@@ -248,6 +249,7 @@ test("API 支持 CSV 来源入队并由 worker 从文件完成寻访", async () 
   const handler = new SearchRunJobHandler({
     aiAssessment: new MockAIAssessment(),
     searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
   });
   await handler.handleOneTimeSearch(queuedJob!);
 
@@ -430,6 +432,7 @@ test("Web 可取消 Running SearchRun，取消后插件提交被拒绝", async (
       authorization: `Bearer ${pluginLogin.json().token}`,
     },
     payload: {
+      batchId: "attachment-batch-1",
       candidates: createCandidateDrafts().slice(0, 1),
     },
   });
@@ -589,6 +592,7 @@ test("插件可上传、覆盖候选人附件，Web 可下载", async () => {
       authorization: `Bearer ${pluginLogin.json().token}`,
     },
     payload: {
+      batchId: "private-batch-1",
       candidates: createCandidateDrafts().slice(0, 1),
     },
   });
@@ -893,6 +897,7 @@ test("Web 用户不能访问其他用户的 SearchRun、附件和审计", async 
       authorization: `Bearer ${ownerPluginLogin.json().token}`,
     },
     payload: {
+      batchId: "private-batch-1",
       candidates: createCandidateDrafts().slice(0, 1),
     },
   });

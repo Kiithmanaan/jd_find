@@ -8,6 +8,7 @@ import type {
   JobProfileVersionRepository,
   SearchRunRepository,
   SourceAdapter,
+  CandidateAssessmentRepository,
 } from "./ports.js";
 import {
   AcquirePhaseService,
@@ -25,6 +26,7 @@ export interface SearchOrchestratorDependencies {
   searchRuns?: SearchRunRepository;
   idGenerator: () => string;
   auditIdGenerator?: () => string;
+  candidateAssessments?: CandidateAssessmentRepository;
 }
 
 export class SearchOrchestrator {
@@ -55,6 +57,7 @@ export class SearchOrchestrator {
       aiAssessmentAudit: deps.aiAssessmentAudit,
       searchRuns: deps.searchRuns,
       auditIdGenerator: deps.auditIdGenerator ?? (() => crypto.randomUUID()),
+      candidateAssessments: deps.candidateAssessments,
     });
 
     const completionService = new CompletionPhaseService({

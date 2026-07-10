@@ -10,9 +10,7 @@ import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.
 import { SearchOrchestrator } from "../src/application/search-orchestrator.js";
 import { createConfirmedJobProfile } from "./fixtures.js";
 
-const workspaceRoot = fileURLToPath(new URL("..", import.meta.url)).includes("/dist/")
-  ? join(fileURLToPath(new URL("..", import.meta.url)).split("/dist/")[0]!)
-  : fileURLToPath(new URL("..", import.meta.url));
+const workspaceRoot = fileURLToPath(new URL(import.meta.url.includes("/dist/") ? "../.." : "..", import.meta.url));
 const fixturePath = join(workspaceRoot, "tests", "fixtures", "candidates.csv");
 
 test("CSV parser 将候选人文件映射为 CandidateDraft", () => {

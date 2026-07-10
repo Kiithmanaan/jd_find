@@ -40,11 +40,9 @@ test("创建来源链接时，缺少平台抛出 DomainError", () => {
   );
 });
 
-test("创建来源链接时，缺少 URL 抛出 DomainError", () => {
-  assert.throws(
-    () => createOriginalSourceLink({ ...validProps, originalUrl: "" }),
-    DomainError,
-  );
+test("缺少 URL 但有辅助线索时创建 fallback_only 来源", () => {
+  const link = createOriginalSourceLink({ ...validProps, originalUrl: "" });
+  assert.equal(link.status, "fallback_only");
 });
 
 test("创建来源链接时，缺少 searchContext 抛出 DomainError", () => {
@@ -56,9 +54,9 @@ test("创建来源链接时，缺少 searchContext 抛出 DomainError", () => {
 
 test("URL 会被标准化", () => {
   const link = createOriginalSourceLink(validProps);
-  assert.ok(link.normalizedUrl.length > 0);
-  assert.ok(!link.normalizedUrl.includes("www."));
-  assert.ok(!link.normalizedUrl.includes("https://"));
+  assert.ok((link.normalizedUrl?.length ?? 0) > 0);
+  assert.ok(!link.normalizedUrl?.includes("www."));
+  assert.ok(!link.normalizedUrl?.includes("https://"));
 });
 
 test("验证来源链接将状态更新为 active 并记录时间", () => {

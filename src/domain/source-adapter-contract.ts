@@ -1,5 +1,6 @@
 import { DomainError } from "./errors.js";
 import type { CandidateDraft, RiskSignal, SourceLead } from "./types.js";
+import { createOriginalSourceLink } from "./original-source-link.js";
 
 export interface SourceAcquisitionResult {
   candidates: CandidateDraft[];
@@ -44,28 +45,15 @@ function normalizeCandidateDraft(candidate: CandidateDraft): CandidateDraft {
 }
 
 function normalizeSourceLead(sourceLead: SourceLead): SourceLead {
-  const fallbackClues = sourceLead.fallbackClues.map((clue) => clue.trim()).filter(Boolean);
-  const hasDirectUrl = Boolean(sourceLead.url?.trim());
-
-  if (!hasDirectUrl && fallbackClues.length === 0) {
-    throw new DomainError("SourceLead must include a direct URL or fallback clues.");
-  }
-
-  if (!sourceLead.platform.trim()) {
-    throw new DomainError("SourceLead platform is required.");
-  }
-
-  if (!sourceLead.searchContext.trim()) {
-    throw new DomainError("SourceLead search context is required.");
-  }
-
-  return {
-    ...sourceLead,
-    platform: sourceLead.platform.trim(),
-    url: sourceLead.url?.trim(),
-    searchContext: sourceLead.searchContext.trim(),
-    fallbackClues,
-  };
+  return createOriginalSourceLink({
+    id: sourceLead.id,
+    platform: sourceLead.platform,
+    originalUrl: sourceLead.originalUrl ?? sourceLead.url,
+    externalId: sourceLead.externalId,
+    searchContext: sourceLead.searchContext,
+    fallbackClues: sourceLead.fallbackClues,
+    riskLevel: sourceLead.riskLevel,
+  });
 }
 
 function assertRiskSignalValid(riskSignal: RiskSignal): void {

@@ -1,4 +1,3 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type {
@@ -10,10 +9,16 @@ import type {
   SearchRunQueue,
   SearchRunRepository,
   UserRepository,
+  PluginCandidateBatchRepository,
+  AttachmentStorage,
+  CandidateAssessmentRepository,
+  ReassessmentLockRepository,
+  PluginAggregationQueue,
 } from "../application/ports.js";
 import { signAuthToken, verifyAuthTokenResult, verifyPassword, type AuthTokenPayload } from "../application/auth.js";
 import { reassessJobProfileCandidates } from "../application/reassess-job-profile-candidates.js";
 import { PluginCandidateService } from "../application/plugin-candidate.service.js";
+import { updateCandidateSourceLink } from "../application/source-link.service.js";
 import {
   assertJobProfileConfirmed,
   confirmJobProfileVersion,
@@ -30,7 +35,12 @@ import {
   InMemoryJobProfileRepository,
   InMemorySearchRunRepository,
   InMemoryUserRepository,
+  InMemoryPluginCandidateBatchRepository,
+  InMemoryCandidateAssessmentRepository,
+  InMemoryReassessmentLockRepository,
 } from "../infrastructure/memory/in-memory-repositories.js";
+import { BatchConflictError, ReassessmentInProgressError } from "../domain/errors.js";
+import { LocalAttachmentStorage } from "../infrastructure/local/local-attachment-storage.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
 import { InMemorySearchRunQueue } from "../infrastructure/memory/in-memory-search-run-queue.js";
 import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
@@ -53,7 +63,12 @@ export interface CreateAppOptions {
   searchRunQueue?: SearchRunQueue;
   users?: UserRepository;
   aiAssessment?: AIAssessmentPort;
+  pluginCandidateBatches?: PluginCandidateBatchRepository;
+  candidateAssessments?: CandidateAssessmentRepository;
+  reassessmentLocks?: ReassessmentLockRepository;
+  pluginAggregationQueue?: PluginAggregationQueue;
   attachmentStorageDir?: string;
+  attachmentStorage?: AttachmentStorage;
   auth?: {
     enabled?: boolean;
     jwtSecret?: string;
@@ -74,11 +89,15 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const searchRunQueue = options.searchRunQueue ?? new InMemorySearchRunQueue();
   const users = options.users ?? new InMemoryUserRepository([]);
   const aiAssessment = options.aiAssessment ?? new MockAIAssessment();
+  const pluginCandidateBatches = options.pluginCandidateBatches ?? new InMemoryPluginCandidateBatchRepository();
+  const candidateAssessments = options.candidateAssessments ?? new InMemoryCandidateAssessmentRepository();
+  const reassessmentLocks = options.reassessmentLocks ?? new InMemoryReassessmentLockRepository();
   const authEnabled = options.auth?.enabled ?? false;
   const jwtSecret = options.auth?.jwtSecret ?? process.env.JWT_SECRET ?? "development-only-secret";
   const webTokenTtlSeconds = options.auth?.webTokenTtlSeconds ?? 7 * 24 * 60 * 60;
   const pluginTokenTtlSeconds = options.auth?.pluginTokenTtlSeconds ?? 7 * 24 * 60 * 60;
   const attachmentStorageDir = options.attachmentStorageDir ?? process.env.RESUME_ATTACHMENT_DIR ?? join(process.cwd(), "data", "resume-attachments");
+  const attachmentStorage = options.attachmentStorage ?? new LocalAttachmentStorage(attachmentStorageDir);
   const maxResumeAttachmentBytes = 20 * 1024 * 1024;
 
   const pluginCandidateService = new PluginCandidateService({
@@ -86,6 +105,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     jobProfiles,
     aiAssessment,
     aiAssessmentAudit: aiAssessmentAudits,
+    pluginBatches: pluginCandidateBatches,
+    aggregationQueue: options.pluginAggregationQueue,
+    candidateAssessments,
   });
 
   app.get("/api/health", async () => {
@@ -233,11 +255,17 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       return reply.code(422).send({ error: "SearchRunInvalid", message: "Search run job profile was not found." });
     }
 
-    const accepted = await pluginCandidateService.acceptCandidates(
-      searchRun,
-      jobProfile,
-      parsedBody.data.candidates,
-    );
+    let accepted: SearchRun;
+    try {
+      accepted = await pluginCandidateService.acceptCandidates(
+        searchRun, jobProfile, parsedBody.data.candidates, parsedBody.data.batchId,
+      );
+    } catch (error) {
+      if (error instanceof BatchConflictError) {
+        return reply.code(409).send({ error: "BatchConflict", message: error.message });
+      }
+      throw error;
+    }
 
     const latest = await searchRuns.findById(accepted.id);
     return reply.code(202).send({
@@ -281,10 +309,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       }
 
       const safeFilename = sanitizeFilename(parsedBody.data.filename);
-      const searchRunDirectory = join(attachmentStorageDir, searchRun.id);
-      const storagePath = join(searchRunDirectory, `${candidate.id}-${safeFilename}`);
-      await mkdir(searchRunDirectory, { recursive: true });
-      await writeFile(storagePath, content);
+      const storageKey = await attachmentStorage.save(searchRun.id, candidate.id, safeFilename, content);
 
       const updatedSearchRun = {
         ...searchRun,
@@ -296,7 +321,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
                   filename: safeFilename,
                   contentType: parsedBody.data.contentType,
                   sizeBytes: content.length,
-                  storagePath,
+                  storageKey,
                   uploadedAt: new Date(),
                 },
               }
@@ -360,7 +385,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
         return reply.code(404).send({ error: "AttachmentNotFound", message: "Resume attachment was not found." });
       }
 
-      const content = await readFile(candidate.resumeAttachment.storagePath);
+      const content = await attachmentStorage.read(candidate.resumeAttachment.storageKey);
       reply.header("content-type", candidate.resumeAttachment.contentType);
       reply.header("content-disposition", `attachment; filename="${candidate.resumeAttachment.filename}"`);
       return reply.code(200).send(content);
@@ -387,10 +412,24 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       });
     }
 
-    pluginCandidateService.cancelAggregation(searchRun.id);
+    await pluginCandidateService.cancelAggregation(searchRun.id);
     const cancelled = await searchRuns.save(cancelSearchRun(searchRun, "User cancelled search run."));
     return reply.code(200).send(toSearchRunResponse(cancelled));
   });
+
+  app.post<{ Params: { id: string; candidateId: string; action: string } }>(
+    "/api/search-runs/:id/candidates/:candidateId/source-link/:action",
+    async (request, reply) => {
+      const currentUser = await authenticateRequest(request.headers.authorization, "web");
+      if (authEnabled && currentUser.status !== "valid") return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+      const searchRun = await searchRuns.findById(request.params.id);
+      if (!searchRun) return reply.code(404).send({ error: "SearchRunNotFound" });
+      if (!canAccessSearchRun(searchRun, currentUser)) return reply.code(403).send({ error: "AuthError" });
+      if (request.params.action !== "verify" && request.params.action !== "expire") return reply.code(400).send({ error: "ValidationError" });
+      const updated = await updateCandidateSourceLink(searchRuns, searchRun.id, request.params.candidateId, request.params.action);
+      return updated ? reply.code(200).send(toSearchRunResponse(updated)) : reply.code(404).send({ error: "CandidateNotFound" });
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/api/job-profiles/:id/candidates", async (request, reply) => {
     const currentUser = await authenticateRequest(request.headers.authorization, "web");
@@ -418,7 +457,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     return reply.code(200).send({
       jobProfileId: jobProfile.id,
       jobProfileVersionId: currentVersion.id,
-      ...toCandidateSummaryResponse(summarizeJobProfileCandidates(accessibleRuns, currentVersion.id)),
+      ...toCandidateSummaryResponse(summarizeJobProfileCandidates(
+        accessibleRuns,
+        currentVersion.id,
+        await candidateAssessments.findLatestByJobProfileVersion(jobProfile.id, currentVersion.id),
+      )),
     });
   });
 
@@ -527,14 +570,18 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       return reply.code(422).send({ error: "JobProfileNotConfirmed", message: "Job profile must be confirmed." });
     }
 
-    const result = await reassessJobProfileCandidates(jobProfile, {
-      searchRuns,
-      aiAssessment,
-      aiAssessmentAudit: aiAssessmentAudits,
-      auditIdGenerator: () => crypto.randomUUID(),
-    });
-
-    return reply.code(202).send(result);
+    if (!await reassessmentLocks.tryAcquire(jobProfile.id, jobProfile.currentVersionId)) {
+      return reply.code(409).send({ error: "ReassessmentInProgress", message: new ReassessmentInProgressError().message });
+    }
+    try {
+      const result = await reassessJobProfileCandidates(jobProfile, {
+        searchRuns, aiAssessment, aiAssessmentAudit: aiAssessmentAudits,
+        auditIdGenerator: () => crypto.randomUUID(), candidateAssessments,
+      });
+      return reply.code(202).send(result);
+    } finally {
+      await reassessmentLocks.release(jobProfile.id, jobProfile.currentVersionId);
+    }
   });
 
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {
@@ -600,7 +647,7 @@ type AuthenticatedRequestState =
   | { status: "valid"; payload: AuthTokenPayload }
   | { status: "missing" | "invalid" | "expired" };
 
-type PublicResumeAttachment = Omit<ResumeAttachment, "storagePath">;
+type PublicResumeAttachment = Omit<ResumeAttachment, "storageKey">;
 type PublicCandidateResult = Omit<CandidateResult, "resumeAttachment"> & {
   resumeAttachment?: PublicResumeAttachment;
 };
@@ -650,7 +697,7 @@ function toCandidateResponse(candidate: CandidateResult): PublicCandidateResult 
     return rest;
   }
 
-  const { storagePath: _storagePath, ...publicAttachment } = resumeAttachment;
+  const { storageKey: _storageKey, ...publicAttachment } = resumeAttachment;
   return {
     ...rest,
     resumeAttachment: publicAttachment,

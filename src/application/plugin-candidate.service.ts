@@ -17,19 +17,26 @@ import type {
   AIAssessmentPort,
   JobProfileRepository,
   SearchRunRepository,
+  PluginCandidateBatchRepository,
+  PluginAggregationQueue,
+  CandidateAssessmentRepository,
 } from "./ports.js";
+import { createHash } from "node:crypto";
+import { BatchConflictError, formatFailureReason } from "../domain/errors.js";
 
 export interface PluginCandidateServiceDependencies {
   searchRuns: SearchRunRepository;
   jobProfiles: JobProfileRepository;
   aiAssessment: AIAssessmentPort;
   aiAssessmentAudit: AIAssessmentAuditSink;
+  pluginBatches: PluginCandidateBatchRepository;
+  aggregationQueue?: PluginAggregationQueue;
+  candidateAssessments?: CandidateAssessmentRepository;
   aggregationWindowMs?: number;
   aggregationThreshold?: number;
 }
 
 export class PluginCandidateService {
-  private readonly aggregationTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly aggregationWindowMs: number;
   private readonly aggregationThreshold: number;
   private readonly deps: PluginCandidateServiceDependencies;
@@ -44,7 +51,20 @@ export class PluginCandidateService {
     searchRun: SearchRun,
     jobProfile: JobProfile,
     candidates: CandidateDraft[],
+    batchId: string,
   ): Promise<SearchRun> {
+    const requestDigest = createHash("sha256").update(JSON.stringify(candidates)).digest("hex");
+    const claim = await this.deps.pluginBatches.claim({
+      searchRunId: searchRun.id,
+      batchId,
+      requestDigest,
+      candidateCount: candidates.length,
+      status: "processing",
+    });
+    if (claim === "conflict") throw new BatchConflictError();
+    if (claim === "duplicate") return searchRun;
+
+    try {
     const next = acquireCandidateResults(searchRun, jobProfile, candidates);
     const saved = await this.deps.searchRuns.save(next);
 
@@ -56,43 +76,26 @@ export class PluginCandidateService {
       saved.rawSubmittedCount >= saved.targetResultCount;
 
     if (shouldProcessImmediately) {
-      this.clearTimer(saved.id);
-      return this.processPendingCandidates(saved, jobProfile);
+      await this.deps.aggregationQueue?.cancel(saved.id);
+      const processed = await this.processPendingCandidates(saved, jobProfile);
+      await this.deps.pluginBatches.complete(searchRun.id, batchId);
+      return processed;
     }
 
-    this.scheduleTimer(saved.id);
+    await this.deps.aggregationQueue?.schedule(saved.id, this.aggregationWindowMs);
+    await this.deps.pluginBatches.complete(searchRun.id, batchId);
     return saved;
-  }
-
-  cancelAggregation(searchRunId: string): void {
-    this.clearTimer(searchRunId);
-  }
-
-  private scheduleTimer(searchRunId: string): void {
-    if (this.aggregationTimers.has(searchRunId)) {
-      return;
+    } catch (error) {
+      await this.deps.pluginBatches.fail(searchRun.id, batchId, formatFailureReason(error));
+      throw error;
     }
-
-    const timer = setTimeout(() => {
-      void this.processScheduledAggregation(searchRunId);
-    }, this.aggregationWindowMs);
-    timer.unref();
-    this.aggregationTimers.set(searchRunId, timer);
   }
 
-  private clearTimer(searchRunId: string): void {
-    const timer = this.aggregationTimers.get(searchRunId);
-    if (!timer) {
-      return;
-    }
-
-    clearTimeout(timer);
-    this.aggregationTimers.delete(searchRunId);
+  async cancelAggregation(searchRunId: string): Promise<void> {
+    await this.deps.aggregationQueue?.cancel(searchRunId);
   }
 
-  private async processScheduledAggregation(searchRunId: string): Promise<void> {
-    this.clearTimer(searchRunId);
-
+  async processScheduledAggregation(searchRunId: string): Promise<void> {
     const searchRun = await this.deps.searchRuns.findById(searchRunId);
     if (!searchRun || ["Completed", "Cancelled", "Failed"].includes(searchRun.status)) {
       return;
@@ -127,7 +130,7 @@ export class PluginCandidateService {
         hardPassedCandidates,
         await this.deps.aiAssessment.assessCandidates(jobProfile, hardPassedCandidates),
       );
-      await this.recordAudit(
+      const auditId = await this.recordAudit(
         next,
         jobProfile,
         hardPassedCandidates,
@@ -135,6 +138,14 @@ export class PluginCandidateService {
         Date.now() - assessmentStartedAt,
         undefined,
       );
+      for (const candidate of hardPassedCandidates) {
+        const assessment = assessments.get(candidate.id);
+        if (assessment) await this.deps.candidateAssessments?.append({
+          id: crypto.randomUUID(), candidateId: candidate.id, candidateFingerprint: candidate.fingerprint,
+          searchRunId: next.id, jobProfileId: jobProfile.id, jobProfileVersionId: next.jobProfileVersionId,
+          auditId, assessmentType: "initial", assessment, createdAt: new Date(),
+        });
+      }
       next = applySoftAssessments(next, assessments);
 
       if (next.rawSubmittedCount >= next.targetResultCount) {
@@ -167,9 +178,9 @@ export class PluginCandidateService {
     assessments: Map<string, MatchAssessment>,
     durationMs: number,
     error: unknown | undefined,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     if (candidates.length === 0) {
-      return;
+      return undefined;
     }
 
     const prompt = JSON.stringify({
@@ -183,8 +194,9 @@ export class PluginCandidateService {
       candidateIds: candidates.map((candidate) => candidate.id),
     });
 
+    const auditId = crypto.randomUUID();
     await this.deps.aiAssessmentAudit.record({
-      id: crypto.randomUUID(),
+      id: auditId,
       searchRunId: searchRun.id,
       jobProfileId: jobProfile.id,
       jobProfileVersionId: searchRun.jobProfileVersionId,
@@ -220,11 +232,7 @@ export class PluginCandidateService {
       errorMessage: error instanceof Error ? error.message : error ? "Unknown AI assessment error." : undefined,
       createdAt: new Date(),
     });
+    return auditId;
   }
 
-  destroy(): void {
-    for (const [searchRunId] of this.aggregationTimers) {
-      this.clearTimer(searchRunId);
-    }
-  }
 }

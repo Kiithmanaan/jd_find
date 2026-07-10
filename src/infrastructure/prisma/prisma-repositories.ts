@@ -1,10 +1,14 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import type {
   HardConditionConfigRepository,
   JobProfileRepository,
   JobProfileVersionRepository,
   SearchRunRepository,
   UserRepository,
+  PluginCandidateBatchRepository,
+  PluginBatchClaim,
+  CandidateAssessmentRepository,
+  ReassessmentLockRepository,
 } from "../../application/ports.js";
 import type {
   HardConditionDimension,
@@ -13,6 +17,8 @@ import type {
   JobProfileVersion,
   SearchRun,
   User,
+  PluginCandidateBatch,
+  CandidateAssessmentRecord,
 } from "../../domain/types.js";
 import {
   toUserCreateInput,
@@ -35,8 +41,79 @@ import {
 
 export type PrismaLikeClient = Pick<
   PrismaClient,
-  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord"
+  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord"
 >;
+
+export class PrismaReassessmentLockRepository implements ReassessmentLockRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+  async tryAcquire(jobProfileId: string, jobProfileVersionId: string): Promise<boolean> {
+    try {
+      await this.prisma.reassessmentLockRecord.create({ data: { jobProfileId, jobProfileVersionId, running: true } });
+      return true;
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+      const claimed = await this.prisma.reassessmentLockRecord.updateMany({
+        where: { jobProfileId, jobProfileVersionId, running: false }, data: { running: true },
+      });
+      return claimed.count === 1;
+    }
+  }
+  async release(jobProfileId: string, jobProfileVersionId: string): Promise<void> {
+    await this.prisma.reassessmentLockRecord.update({ where: { jobProfileId_jobProfileVersionId: { jobProfileId, jobProfileVersionId } }, data: { running: false } });
+  }
+}
+
+export class PrismaPluginCandidateBatchRepository implements PluginCandidateBatchRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async claim(batch: PluginCandidateBatch): Promise<PluginBatchClaim> {
+    const existing = await this.prisma.pluginCandidateBatchRecord.findUnique({
+      where: { searchRunId_batchId: { searchRunId: batch.searchRunId, batchId: batch.batchId } },
+    });
+    if (existing) {
+      if (existing.requestDigest !== batch.requestDigest) return "conflict";
+      if (existing.status !== "failed") return "duplicate";
+      await this.prisma.pluginCandidateBatchRecord.update({
+        where: { id: existing.id }, data: { status: "processing", failureReason: null },
+      });
+      return "retry";
+    }
+    try {
+      await this.prisma.pluginCandidateBatchRecord.create({ data: batch });
+      return "claimed";
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+      const raced = await this.prisma.pluginCandidateBatchRecord.findUnique({
+        where: { searchRunId_batchId: { searchRunId: batch.searchRunId, batchId: batch.batchId } },
+      });
+      if (!raced) throw new Error("Plugin candidate batch claim failed.");
+      return raced.requestDigest === batch.requestDigest ? "duplicate" : "conflict";
+    }
+  }
+  async complete(searchRunId: string, batchId: string): Promise<void> {
+    await this.prisma.pluginCandidateBatchRecord.update({ where: { searchRunId_batchId: { searchRunId, batchId } }, data: { status: "completed", failureReason: null } });
+  }
+  async fail(searchRunId: string, batchId: string, reason: string): Promise<void> {
+    await this.prisma.pluginCandidateBatchRecord.update({ where: { searchRunId_batchId: { searchRunId, batchId } }, data: { status: "failed", failureReason: reason } });
+  }
+}
+
+export class PrismaCandidateAssessmentRepository implements CandidateAssessmentRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+  async append(record: CandidateAssessmentRecord): Promise<void> {
+    await this.prisma.candidateAssessmentRecord.create({ data: { ...record, assessment: record.assessment as object } });
+  }
+  async findLatestByJobProfileVersion(jobProfileId: string, jobProfileVersionId: string): Promise<CandidateAssessmentRecord[]> {
+    const records = await this.prisma.candidateAssessmentRecord.findMany({
+      where: { jobProfileId, jobProfileVersionId }, orderBy: { createdAt: "desc" },
+    });
+    const latest = new Map<string, CandidateAssessmentRecord>();
+    for (const record of records) {
+      if (!latest.has(record.candidateFingerprint)) latest.set(record.candidateFingerprint, { ...record, auditId: record.auditId ?? undefined, assessmentType: record.assessmentType as CandidateAssessmentRecord["assessmentType"], assessment: record.assessment as unknown as CandidateAssessmentRecord["assessment"] });
+    }
+    return [...latest.values()];
+  }
+}
 
 const searchRunInclude = {
   candidates: true,

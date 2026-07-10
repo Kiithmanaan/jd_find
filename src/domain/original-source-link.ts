@@ -1,156 +1,65 @@
 import { DomainError } from "./errors.js";
+import type { OriginalSourceLink, SourceRiskLevel } from "./types.js";
 
-// ─── 类型 ──────────────────────────────────────────────────────────
-
-export type SourceLinkStatus = "unverified" | "active" | "expired";
-
-export type SourceRiskLevel = "low" | "medium" | "high";
-
-export interface OriginalSourceLink {
-  id: string;
+export function createOriginalSourceLink(options: {
+  id?: string;
   platform: string;
-  originalUrl: string;
-  normalizedUrl: string;
-  externalId: string;
-  searchContext: string;
-  fallbackClues: string[];
-  riskLevel: SourceRiskLevel;
-  status: SourceLinkStatus;
-  lastVerifiedAt: Date | undefined;
-  createdAt: Date;
-}
-
-export interface CreateSourceLinkOptions {
-  id: string;
-  platform: string;
-  originalUrl: string;
+  originalUrl?: string;
+  url?: string;
   externalId?: string;
   searchContext: string;
   fallbackClues?: string[];
   riskLevel?: SourceRiskLevel;
-}
-
-// ─── 工厂函数 ──────────────────────────────────────────────────────
-
-export function createOriginalSourceLink(options: CreateSourceLinkOptions): OriginalSourceLink {
+}): OriginalSourceLink {
   const platform = options.platform.trim();
-  if (!platform) {
-    throw new DomainError("Source link platform is required.");
-  }
-
-  const originalUrl = options.originalUrl.trim();
-  if (!originalUrl) {
-    throw new DomainError("Source link URL is required.");
-  }
-
+  const originalUrl = (options.originalUrl ?? options.url)?.trim();
   const searchContext = options.searchContext.trim();
-  if (!searchContext) {
-    throw new DomainError("Source link search context is required.");
-  }
-
-  const now = new Date();
+  const fallbackClues = options.fallbackClues?.map((clue) => clue.trim()).filter(Boolean) ?? [];
+  if (!platform) throw new DomainError("Source link platform is required.");
+  if (!searchContext) throw new DomainError("Source link search context is required.");
+  if (!originalUrl && fallbackClues.length === 0) throw new DomainError("Source link URL or fallback clues are required.");
   return {
-    id: options.id,
+    id: options.id ?? crypto.randomUUID(),
     platform,
-    originalUrl,
-    normalizedUrl: normalizeUrl(originalUrl),
+    url: originalUrl,
+    originalUrl: originalUrl ?? "",
+    normalizedUrl: originalUrl ? normalizeUrl(originalUrl) : "",
     externalId: options.externalId?.trim() ?? "",
     searchContext,
-    fallbackClues: options.fallbackClues?.map((clue) => clue.trim()).filter(Boolean) ?? [],
+    fallbackClues,
+    expired: false,
+    verificationStatus: originalUrl ? "unverified" : "fallback_only",
+    status: originalUrl ? "unverified" : "fallback_only",
     riskLevel: options.riskLevel ?? assessRiskLevel(originalUrl, platform),
-    status: "unverified",
-    lastVerifiedAt: undefined,
-    createdAt: now,
+    createdAt: new Date(),
   };
 }
 
-// ─── 状态机 ────────────────────────────────────────────────────────
-
 export function verifySourceLink(link: OriginalSourceLink): OriginalSourceLink {
-  return {
-    ...link,
-    status: "active",
-    lastVerifiedAt: new Date(),
-  };
+  if (!link.originalUrl && !link.url) throw new DomainError("Fallback-only source links cannot be verified.");
+  return { ...link, expired: false, verificationStatus: "active", status: "active", lastVerifiedAt: new Date() };
 }
 
 export function expireSourceLink(link: OriginalSourceLink): OriginalSourceLink {
-  if (link.status === "expired") {
-    throw new DomainError("Source link is already expired.");
-  }
-
-  return {
-    ...link,
-    status: "expired",
-  };
+  if (link.verificationStatus === "expired" || link.expired) throw new DomainError("Source link is already expired.");
+  return { ...link, expired: true, verificationStatus: "expired", status: "expired" };
 }
-
-// ─── 判断函数 ──────────────────────────────────────────────────────
 
 export function isSourceLinkAccessible(link: OriginalSourceLink): boolean {
-  if (link.status === "expired") {
-    return false;
-  }
-
-  if (link.status === "active" && link.lastVerifiedAt) {
-    const hoursSinceVerification = (Date.now() - link.lastVerifiedAt.getTime()) / (1000 * 60 * 60);
-    if (hoursSinceVerification > 24) {
-      return false;
-    }
-  }
-
-  if (link.status === "unverified") {
-    return link.fallbackClues.length > 0 || isLowRiskPlatform(link.platform);
-  }
-
-  return true;
+  if (link.verificationStatus === "expired" || link.expired) return false;
+  if (link.verificationStatus === "fallback_only") return link.fallbackClues.length > 0;
+  if (link.verificationStatus === "active" && link.lastVerifiedAt) return Date.now() - link.lastVerifiedAt.getTime() <= 86_400_000;
+  return Boolean(link.originalUrl || link.url) || link.fallbackClues.length > 0;
 }
-
-// ─── 辅助函数 ──────────────────────────────────────────────────────
 
 export function normalizeUrl(url: string): string {
-  let normalized = url.trim();
-
-  try {
-    const parsed = new URL(normalized);
-    normalized = parsed.hostname.replace(/^www\./, "") + parsed.pathname;
-    normalized = normalized.replace(/\/+$/, "").toLowerCase();
-  } catch {
-    // If URL parsing fails, do basic normalization
-    normalized = normalized
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .replace(/\/+$/, "")
-      .toLowerCase();
-  }
-
-  return normalized || url.trim();
+  const parsed = new URL(url.trim());
+  return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/+$/, "")}`.toLowerCase();
 }
 
-export function assessRiskLevel(url: string, platform: string): SourceRiskLevel {
-  const normalizedUrl = url.toLowerCase();
-  const normalizedPlatform = platform.toLowerCase();
-
-  if (
-    normalizedUrl.includes("linkedin") ||
-    normalizedUrl.includes("zhaopin") ||
-    normalizedUrl.includes("51job")
-  ) {
-    return "medium";
-  }
-
-  if (
-    normalizedPlatform.includes("internal") ||
-    normalizedPlatform.includes("private") ||
-    normalizedUrl.includes("internal")
-  ) {
-    return "high";
-  }
-
+export function assessRiskLevel(url: string | undefined, platform: string): SourceRiskLevel {
+  const value = `${url ?? ""} ${platform}`.toLowerCase();
+  if (value.includes("internal") || value.includes("private")) return "high";
+  if (["linkedin", "zhaopin", "51job", "猎聘", "boss"].some((name) => value.includes(name))) return "medium";
   return "low";
-}
-
-function isLowRiskPlatform(platform: string): boolean {
-  const lowRisk = ["linkedin", "github", "猎聘", "boss直聘"];
-  return lowRisk.some((name) => platform.toLowerCase().includes(name));
 }

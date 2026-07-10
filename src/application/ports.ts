@@ -10,6 +10,8 @@ import type {
   RiskSignal,
   SearchRun,
   User,
+  PluginCandidateBatch,
+  CandidateAssessmentRecord,
 } from "../domain/types.js";
 
 export interface SourceAdapter {
@@ -92,4 +94,36 @@ export type OneTimeSearchSource =
 
 export interface SearchRunQueue {
   enqueueOneTimeSearch(job: OneTimeSearchJob): Promise<{ jobId: string; searchRunId: string }>;
+}
+
+export interface PluginAggregationQueue {
+  schedule(searchRunId: string, delayMs: number): Promise<void>;
+  cancel(searchRunId: string): Promise<void>;
+}
+export interface PluginAggregationJob { searchRunId: string; }
+
+export type PluginBatchClaim = "claimed" | "duplicate" | "retry" | "conflict";
+
+export interface PluginCandidateBatchRepository {
+  claim(batch: PluginCandidateBatch): Promise<PluginBatchClaim>;
+  complete(searchRunId: string, batchId: string): Promise<void>;
+  fail(searchRunId: string, batchId: string, reason: string): Promise<void>;
+}
+
+export interface CandidateAssessmentRepository {
+  append(record: CandidateAssessmentRecord): Promise<void>;
+  findLatestByJobProfileVersion(
+    jobProfileId: string,
+    jobProfileVersionId: string,
+  ): Promise<CandidateAssessmentRecord[]>;
+}
+
+export interface ReassessmentLockRepository {
+  tryAcquire(jobProfileId: string, jobProfileVersionId: string): Promise<boolean>;
+  release(jobProfileId: string, jobProfileVersionId: string): Promise<void>;
+}
+
+export interface AttachmentStorage {
+  save(searchRunId: string, candidateId: string, filename: string, content: Buffer): Promise<string>;
+  read(storageKey: string): Promise<Buffer>;
 }

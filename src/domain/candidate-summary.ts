@@ -1,4 +1,4 @@
-import type { CandidateResult, SearchRun } from "./types.js";
+import type { CandidateAssessmentRecord, CandidateResult, SearchRun } from "./types.js";
 
 export interface JobProfileCandidateSummary {
   currentVersionCandidates: CandidateResult[];
@@ -8,6 +8,7 @@ export interface JobProfileCandidateSummary {
 export function summarizeJobProfileCandidates(
   searchRuns: SearchRun[],
   currentJobProfileVersionId: string,
+  currentAssessments: CandidateAssessmentRecord[] = [],
 ): JobProfileCandidateSummary {
   const latestByFingerprint = new Map<string, CandidateResult>();
 
@@ -17,6 +18,10 @@ export function summarizeJobProfileCandidates(
     }
   }
 
+  for (const record of currentAssessments) {
+    const candidate = latestByFingerprint.get(record.candidateFingerprint);
+    if (candidate) latestByFingerprint.set(record.candidateFingerprint, { ...candidate, status: "Displayable", matchAssessment: record.assessment });
+  }
   const candidates = [...latestByFingerprint.values()].sort(compareCandidatesByAssessment);
   return {
     currentVersionCandidates: candidates.filter(
