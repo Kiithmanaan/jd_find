@@ -27,7 +27,7 @@
 - CSV Source Adapter：从本地 CSV 文件读取候选人草稿，作为非第三方平台的真实输入来源。
 - AI Assessment 契约：匹配分规范化、推荐结论、合适点、不合适点、风险点和 trace 必填。
 - AI Assessment 审计：记录评估输入快照、输出快照、provider 和 model。
-- HTTP AI Assessment Adapter：Worker 可通过通用 HTTP endpoint 接入外部 AI 评估服务；API 进程内的插件增量评估和重评估默认仍使用注入的 AI Assessment，生产入口当前未读取 AI HTTP 环境变量。
+- AI Assessment Provider：API、Worker、插件增量评估和重评估均通过 `createAIAssessmentFromEnv` 接入，默认使用 mock，也可切换 HTTP 或 LangGraph OpenAI。
 - 插件 ingestion API：插件 SearchRun 创建、插件候选人批量提交、按创建用户限制提交范围。
 - 简历附件：插件上传、重复覆盖、Web 下载；SearchRun 查询响应不暴露本地 `storagePath`。
 - GitHub Actions CI：push / pull request 时执行依赖安装、Prisma generate/validate、后端类型检查、前端类型检查、测试和前端构建。
@@ -36,7 +36,6 @@
 未实现：
 
 - 真实招聘平台接入。
-- API 进程内插件增量评估和重评估的 HTTP AI 生产接线。
 - 完整产品级前端界面。
 - 浏览器插件本体。
 - ATS、长期人才库、自动沟通。
@@ -232,6 +231,8 @@ POST /api/plugin/search-runs/:id/candidates
   "candidates": []
 }
 ```
+
+`batchId` 必填；相同批次重复提交不会重复计数，复用批次号提交不同内容返回 `409 BatchConflict`。
 
 任务查询：
 

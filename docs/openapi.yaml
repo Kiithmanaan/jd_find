@@ -704,6 +704,19 @@ components:
             type: string
         expired:
           type: boolean
+        normalizedUrl:
+          type: string
+        externalId:
+          type: string
+        verificationStatus:
+          type: string
+          enum: [unverified, active, expired, fallback_only]
+        lastVerifiedAt:
+          type: string
+          format: date-time
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
     MockOneTimeSearchRequest:
       type: object
       required: [jobProfile, sourceType, candidates]
@@ -779,7 +792,7 @@ components:
           type: string
     PluginCandidateSubmission:
       type: object
-      required: [candidates]
+      required: [batchId, candidates]
       properties:
         batchId:
           type: string
