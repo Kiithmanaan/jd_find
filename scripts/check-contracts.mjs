@@ -10,12 +10,12 @@ function assertIncludes(source, expected, description) {
 }
 
 const types = read("src/domain/types.ts");
-const openapi = read("docs/openapi.yaml");
-const architecture = read("docs/engineering-architecture.md");
+const openapi = read("docs/31-technical-openapi.yaml");
+const architecture = read("docs/10-technical-architecture.md");
 const schemas = read("src/api/schemas.ts");
 const readme = read("README.md");
-const developmentGuide = read("docs/development-guide.md");
-const codeTodo = read("docs/code-todo.md");
+const developmentGuide = read("docs/40-engineering-development-guide.md");
+const codeTodo = read("docs/50-todo.md");
 
 const statusMatch = types.match(/export type SearchRunStatus =([\s\S]*?);/);
 if (!statusMatch) {
@@ -35,8 +35,8 @@ for (const expected of [".min(10)", ".max(500)", ".default(200)"]) {
   assertIncludes(schemas, expected, `Zod targetResultCount contract should include ${expected}`);
 }
 
-assertIncludes(readme, "docs/code-todo.md", "README architecture docs should include code TODO document");
-assertIncludes(developmentGuide, "docs/code-todo.md", "Development guide should mention code TODO document");
+assertIncludes(readme, "docs/50-todo.md", "README architecture docs should include TODO document");
+assertIncludes(developmentGuide, "docs/50-todo.md", "Development guide should mention TODO document");
 
 for (const expected of [
   "AI Assessment",

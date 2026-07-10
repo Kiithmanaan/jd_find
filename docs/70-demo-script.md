@@ -38,7 +38,7 @@ http://127.0.0.1:5173
 
 ## 2. 演示岗位画像
 
-详细 demo 数据见 `docs/demo-data.md`。
+详细 demo 数据见 `docs/71-demo-data.md`。
 
 岗位：高级解决方案顾问。
 
