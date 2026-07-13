@@ -16,6 +16,19 @@ import {
   buildMockSearchRun,
   mockHardConditionConfig,
 } from "./mock-data.js";
+import type {
+  JobProfileVersion as WireJobProfileVersion,
+  CandidateResult as WireCandidateResult,
+  SearchRun as WireSearchRun,
+  LoginResponse,
+  JobProfileVersionsResponse,
+  JobProfileVersionDraftRequest,
+  CreateOneTimeSearchRunResponse,
+  CandidateSummaryResponse,
+  AIAssessmentAuditsResponse,
+  ReassessCandidatesResponse,
+  HardConditionConfigResponse,
+} from "./api-types.js";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -309,23 +322,9 @@ function escapeCsv(value: string): string {
   return value;
 }
 
-export interface ApiJobProfileVersion {
-  id: string; jobProfileId: string; version: number; title: string; jdText: string;
-  searchCondition: Record<string, unknown>; hardRequirements: unknown[]; softRequirements: unknown[];
-  status: "Draft" | "Confirmed"; createdAt: string; confirmedAt?: string;
-}
-
-export interface ApiCandidate {
-  id: string; fingerprint: string; status: string;
-  resume: { name: string; title: string; city: string; educationLevel: string; yearsOfExperience: number };
-  sourceLead: { platform: string; url?: string; normalizedUrl?: string; verificationStatus?: string; riskLevel?: string };
-  matchAssessment?: { score: number; recommendation: string; recommendationReason: string };
-}
-
-export interface ApiSearchRun {
-  id: string; jobProfileId: string; status: string; targetResultCount: number; rawSubmittedCount: number;
-  candidates: ApiCandidate[]; failureReason?: string; interruptedReason?: string;
-}
+export type ApiJobProfileVersion = WireJobProfileVersion;
+export type ApiCandidate = WireCandidateResult;
+export type ApiSearchRun = WireSearchRun;
 
 let webToken = localStorage.getItem("jd-search-token") ?? "";
 
@@ -342,15 +341,21 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const realApi = {
   async login(email: string, password: string): Promise<void> {
-    const result = await apiRequest<{ token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    const result = await apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
     webToken = result.token; localStorage.setItem("jd-search-token", result.token);
   },
   hasToken: (): boolean => Boolean(webToken),
   logout: (): void => { webToken = ""; localStorage.removeItem("jd-search-token"); },
-  versions: (profileId: string) => apiRequest<{ currentVersionId?: string; versions: ApiJobProfileVersion[] }>(`/api/job-profiles/${profileId}/versions`),
-  createDraft: (profileId: string, source: ApiJobProfileVersion) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, { method: "POST", body: JSON.stringify({ title: source.title, jdText: source.jdText, searchCondition: source.searchCondition, hardRequirements: source.hardRequirements, softRequirements: source.softRequirements }) }),
+  versions: (profileId: string) => apiRequest<JobProfileVersionsResponse>(`/api/job-profiles/${profileId}/versions`),
+  createDraft: (profileId: string, source: ApiJobProfileVersion) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: source.title, jdText: source.jdText, searchCondition: source.searchCondition,
+      hardRequirements: source.hardRequirements, softRequirements: source.softRequirements,
+    } satisfies JobProfileVersionDraftRequest),
+  }),
   confirmVersion: (profileId: string, versionId: string) => apiRequest<unknown>(`/api/job-profiles/${profileId}/versions/${versionId}/confirm`, { method: "POST" }),
-  createRun: (version: ApiJobProfileVersion, targetResultCount: number) => apiRequest<{ searchRunId: string }>("/api/search-runs/one-time", {
+  createRun: (version: ApiJobProfileVersion, targetResultCount: number) => apiRequest<CreateOneTimeSearchRunResponse>("/api/search-runs/one-time", {
     method: "POST", body: JSON.stringify({ sourceType: "plugin", targetResultCount, jobProfile: {
       id: version.jobProfileId, title: version.title, jdText: version.jdText, status: "Confirmed", currentVersionId: version.id,
       searchCondition: version.searchCondition, hardRequirements: version.hardRequirements, softRequirements: version.softRequirements,
@@ -358,9 +363,10 @@ export const realApi = {
   }),
   run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),
   cancel: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}/cancel`, { method: "POST" }),
-  candidates: (profileId: string) => apiRequest<{ currentVersionCandidates: ApiCandidate[]; staleVersionCandidates: ApiCandidate[] }>(`/api/job-profiles/${profileId}/candidates`),
-  audits: (runId: string) => apiRequest<{ records: Array<{ id: string; status: string; provider: string; model: string; durationMs: number }> }>(`/api/search-runs/${runId}/ai-assessment-audits`),
-  reassess: (profileId: string) => apiRequest<{ reassessedCount: number }>(`/api/job-profiles/${profileId}/reassess-candidates`, { method: "POST" }),
+  candidates: (profileId: string) => apiRequest<CandidateSummaryResponse>(`/api/job-profiles/${profileId}/candidates`),
+  audits: (runId: string) => apiRequest<AIAssessmentAuditsResponse>(`/api/search-runs/${runId}/ai-assessment-audits`),
+  reassess: (profileId: string) => apiRequest<ReassessCandidatesResponse>(`/api/job-profiles/${profileId}/reassess-candidates`, { method: "POST" }),
+  hardConditionConfig: () => apiRequest<HardConditionConfigResponse>("/api/hard-condition-config"),
 };
 
 /** 重试失败的 SearchRun — 重置为 Running */
