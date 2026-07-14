@@ -10,6 +10,7 @@
 | 自动化测试 | `npm test` | 全部测试通过 | 已完成 |
 | 前端构建 | `npm run web:build` | 构建成功 | 已完成 |
 | CI | GitHub Actions | push 后执行全量检查 | 已完成 |
+| 部署前真实环境集成验证 | 手动 smoke（真实 PostgreSQL + Redis + API + Worker） | migration、登录、一次性寻访（含 BullMQ 异步处理）、硬筛、AI 评估、审计、重评估、插件提交、附件上传下载、取消全部跑通 | 已完成 |
 
 ## 2. 认证与账号
 
