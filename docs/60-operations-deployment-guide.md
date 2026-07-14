@@ -1,5 +1,7 @@
 # 部署手册
 
+> 文档性质：现状事实源（运维）——随部署形态变化原地改写。
+
 ## 1. 第一阶段部署形态
 
 - 单台云服务器。
@@ -31,29 +33,14 @@
 
 ## 3. 环境变量
 
-生产 `.env` 必填：
+环境变量的完整清单以仓库根目录 `.env.example` 为事实源（受 `npm run contracts:check` 校验，代码消费的变量必须在其中声明），本节不重复维护清单。生产部署时 `cp .env.example .env` 后按下述要求修改。
 
-```text
-DATABASE_URL=
-JWT_SECRET=
-PORT=3000
-HOST=127.0.0.1
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-SEARCH_RUN_QUEUE_NAME=search-runs
-AI_ASSESSMENT_PROVIDER=mock
-AI_ASSESSMENT_ENDPOINT=
-AI_ASSESSMENT_API_KEY=
-AI_ASSESSMENT_PROVIDER_NAME=mock
-AI_ASSESSMENT_MODEL=external-ai-assessment
-AI_ASSESSMENT_TIMEOUT_MS=30000
-```
+生产环境要求：
 
-要求：
-
-- `JWT_SECRET` 必须使用强随机值。
+- `JWT_SECRET` 必须使用强随机值，不得保留示例值。
+- `DATABASE_URL` 指向 Compose PostgreSQL。
+- `AI_ASSESSMENT_PROVIDER` 按实际接入的 provider 配置，对应的 endpoint/key 必填（校验规则见 `src/infrastructure/ai/create-ai-assessment.ts`）。
 - `.env` 不提交到 git。
-- 生产 `DATABASE_URL` 指向 Compose PostgreSQL。
 
 ## 4. 部署步骤
 

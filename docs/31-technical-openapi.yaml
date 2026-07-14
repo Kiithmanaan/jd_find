@@ -1,3 +1,4 @@
+# 文档性质：现状事实源（API 契约）——请求校验以 src/api/schemas.ts 为代码事实源，本文件为对外发布契约，受 npm run contracts:check 校验。
 openapi: 3.0.3
 info:
   title: JD Search API
