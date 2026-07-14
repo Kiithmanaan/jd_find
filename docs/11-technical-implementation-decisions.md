@@ -1,5 +1,7 @@
 # 代码实现前确认清单
 
+> 文档性质：决策存档——记录第一阶段代码实现前锁定的工程决策及其理由，append-only，不随实现进展改写。个别条目已被后续实现取代（在条目处标注）；与现状冲突时，以 `docs/00-requirements-baseline.md` 和 `docs/10-technical-architecture.md` 等现状事实源为准。
+
 本文档列出从架构方案进入代码实现前必须锁定的工程决策。除非用户明确调整，后续代码实现按“默认建议”执行。
 
 ## 1. 项目形态
@@ -28,7 +30,7 @@
 - Database：PostgreSQL。
 - ORM：Prisma。
 - Queue：BullMQ + Redis。
-- Test：Vitest。
+- Test：Vitest。（已被取代：实际采用 Node 内置 `node --test`，见 `package.json` 的 `test` 脚本。）
 - E2E：Playwright 或 API 级集成测试，MVP 优先 API 级。
 
 理由：
@@ -40,7 +42,7 @@
 
 ## 3. MVP 第一阶段实现方式
 
-默认建议：先用 Mock Source Adapter 和 Mock AI Assessment 跑通业务闭环。
+默认建议：先用 Mock Source Adapter 和 Mock AI Assessment 跑通业务闭环。（部分被取代：AI 侧现已具备 Mock、通用 HTTP 和 LangGraph OpenAI 三种 `AIAssessmentPort` 实现，真实 provider 接入口径见 `docs/00-requirements-baseline.md` 第 8 节。）
 
 第一阶段不接：
 

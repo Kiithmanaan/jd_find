@@ -1,5 +1,7 @@
 # 猎头自动寻访与 AI 辅助筛选工程化落地架构确认稿
 
+> 文档性质：现状事实源——描述当前技术架构、领域模型、状态机与工程边界，设计变化时原地改写。SearchRun 状态枚举以 `src/domain/types.ts` 为代码事实源，本文档第 2 节映射表受 `npm run contracts:check` 校验。
+
 ## 1. 产出定位
 
 本文档用于在代码实现前确认业务需求到工程架构的转译边界。它不是 PRD、页面原型、数据库设计或接口设计，也不展开具体功能模块实现。
@@ -584,3 +586,229 @@ Acquired
 - MVP 不做自动沟通。
 - MVP 先用 Adapter 抽象来源渠道，真实渠道接入后置。
 - MVP 先用 AI 服务边界和审计结构约束，具体模型选择后置。
+
+MVP 阶段不要求实现（生产化演进项）：完整 ATS、多租户、团队权限、组织管理、完整 RBAC 角色模型、全局审计中间件、Outbox、对象存储。MVP 仍必须保留 Web Token / Plugin Token 身份边界、owner 级访问控制、SearchRun 事件、AI Assessment 审计、失败原因和敏感数据最小暴露。
+
+## 12. 技术栈与分层职责
+
+### 12.1 Web App
+
+采用：
+
+- Vite
+- React
+- TanStack Router / TanStack Query / TanStack Table
+- TanStack Form，后续按需引入
+- shadcn/ui
+- Tailwind CSS
+
+职责：
+
+- 提供岗位画像维护页面。
+- 提供搜索任务创建、确认、进度查看页面。
+- 提供候选人列表、筛选、排序、批量操作页面。
+- 提供 AI 匹配报告、合适点、不合适点、证据说明展示。
+- 提供原始页面回链入口。
+- 提供任务失败、重试、重评估等操作入口。
+
+前端不得承载核心业务规则。前端可以做交互校验和展示逻辑，但岗位画像规则、硬性过滤、状态流转、匹配评分、权限判断，必须以后端领域层结果为准。
+
+### 12.2 API Layer
+
+采用：Fastify、Zod request/response validation、JWT auth、Web Token / Plugin Token 身份边界、owner 级访问控制、OpenAPI generation；RBAC、Tenant Context、Audit middleware 后续实现。
+
+职责：
+
+- 接收前端、插件、CSV、外部适配器请求，完成请求参数校验。
+- MVP 当前注入用户身份上下文，并区分 Web Token / Plugin Token；SearchRun、JobProfile、附件、AI 审计接口至少按 `ownerId` 或创建用户做访问控制；组织、租户、RBAC 角色上下文后续实现。
+- 调用 Application Layer，返回稳定、可版本化的 API 响应。
+- MVP 当前必须保留 SearchRun 事件、AI Assessment 审计和失败原因；全局请求审计、导出审计、对象访问审计后续实现。
+
+API Layer 不得直接操作领域规则，不得直接编排复杂业务流程，不得绕过 Application Layer 调用 Infrastructure。
+
+### 12.3 Application Layer
+
+职责：SearchRun orchestration、候选人导入/抓取 workflow、硬筛执行、AI 评估执行、重评估 workflow、队列派发与重试策略、导出 workflow。Application Layer 负责业务用例编排，但不承载核心判断规则。
+
+现有应用模块（`src/application/`）：`search-orchestrator.ts`、`search-run-job-handler.ts`、`search-run-phases.ts`、`plugin-candidate.service.ts`、`reassess-job-profile-candidates.ts`、`source-link.service.ts`、`ports.ts`、`auth.ts`。
+
+Application Layer 可以：开启事务、调用领域对象、调用 Repository、派发队列任务、记录应用事件、处理重试/失败/补偿。
+
+Application Layer 不应：直接写复杂 SQL、直接拼接 AI Prompt、直接判断岗位匹配规则、直接判断 SearchRun 状态能否流转、直接访问 Redis/对象存储/HTTP 外部服务。
+
+### 12.4 Domain Layer
+
+核心领域对象（类型定义以 `src/domain/types.ts` 为准）：
+
+- `JobProfile` / `JobProfileVersion`
+- `SearchRun` / `SearchEvent`
+- `CandidateResult` / `CandidateDraft`
+- `MatchAssessment`
+- `AIAssessmentAuditRecord`
+- `OriginalSourceLink`（别名 `SourceLead`）
+- `ResumeAttachment`
+- `HardConditionRule` / `HardConditionDimension`
+
+核心规则（对应 `src/domain/` 下的模块）：
+
+- JobProfile 版本与确认规则（`job-profile.ts`）
+- SearchRun 状态机与事件（`search-run.ts`、`events.ts`）
+- 候选人指纹去重与汇总（`candidate-summary.ts`）
+- 硬筛规则（`hard-filter.ts`）
+- AI assessment 契约（`ai-assessment-contract.ts`）
+- 回链规则（`original-source-link.ts`）
+- Source adapter 契约（`source-adapter-contract.ts`）
+
+Domain Layer 是本项目的业务核心。任何核心业务规则必须进入 Domain Layer，并具备单元测试。
+
+Domain Layer 不得依赖：Fastify、Prisma、Redis、BullMQ、HTTP client、React、文件系统、对象存储 SDK、具体 AI 服务 SDK。Domain Layer 应保持纯净，优先使用纯函数、值对象、聚合根和领域服务。
+
+### 12.5 Infrastructure Layer
+
+采用：Prisma、PostgreSQL、BullMQ、Redis、CSV adapter、Plugin adapter、HTTP AI adapter、LangChain / LangGraph adapter、Error log；Object Storage、Outbox、Audit log、Observability 后续实现。
+
+职责：
+
+- 数据持久化、队列执行、外部 AI 服务调用、插件数据接收、CSV 解析。
+- LangChain / LangGraph AI 编排、模型调用、结构化输出解析和 trace 元数据收集。
+- MVP 当前允许本地简历附件存储，但 API 响应不得暴露本地 `storagePath`。
+- 原始页面截图或存证存储后续实现；日志、指标、追踪后续完善。
+
+Infrastructure Layer 实现接口，不定义业务规则。LangChain / LangGraph 只能作为 Infrastructure adapter 实现 Application Layer 定义的 port，不得替代领域规则、状态机、权限判断或审计链路。
+
+## 13. 分层依赖规则
+
+依赖方向必须单向。
+
+```text
+Web App
+  ↓
+API Layer
+  ↓
+Application Layer
+  ↓
+Domain Layer
+
+Infrastructure Layer
+  ↑ implements interfaces required by Application / Domain
+```
+
+允许：
+
+- API Layer 调用 Application Layer。
+- Application Layer 调用 Domain Layer。
+- Application Layer 依赖 Repository / Adapter interface。
+- Infrastructure Layer 实现 Repository / Adapter interface。
+- Infrastructure Layer 可以实现 LangChain / LangGraph AI adapter。
+- Web App 调用 API。
+
+禁止：
+
+- Domain Layer 依赖 Infrastructure。
+- Domain Layer 依赖 Prisma Model。
+- Domain Layer 依赖 Fastify Request。
+- Application Layer 直接使用 Prisma Client。
+- API Layer 直接使用 Prisma Client。
+- Web App 复制后端业务规则。
+- Queue Job 绕过 Application Layer 直接改业务状态。
+- Domain、Application、API、Web App 直接 import `@langchain/*`。
+- Domain、Application、API、Web App 依赖 LangGraph state 类型。
+- Queue Job 直接调用 LangGraph；必须通过 Application Service 和 `AIAssessmentPort`。
+
+## 14. 架构纪律
+
+### 14.1 业务规则不得外泄
+
+凡属于以下内容，必须进入 Domain Layer：岗位画像权重、硬性条件判断、匹配分计算、状态流转、AI 评估结果解释、原始回链有效性规则、候选人去重规则。
+
+不得写在：React Component、API Route、Prisma Repository、Queue Processor、Adapter、SQL 查询片段。
+
+LangGraph prompt / node 不得实现：硬性条件判断、SearchRun 状态流转、权限判断、候选人去重、匹配排序规则。
+
+### 14.2 状态必须由状态机控制
+
+SearchRun、CandidateResult、OriginalSourceLink 均应有明确状态。
+
+禁止直接赋值：
+
+```ts
+searchRun.status = 'Completed';
+```
+
+推荐：
+
+```ts
+searchRun.complete();
+```
+
+状态变化必须：
+
+- 校验前置状态。
+- 记录状态事件。
+- MVP 当前至少写入 SearchRun 事件和失败原因；完整审计日志后续实现。
+- 必要时发布 Domain Event。
+- LangGraph 不得直接修改 SearchRun 状态，必须通过 Application Service 调用领域状态机。
+
+### 14.3 AI 输出必须可追溯
+
+任何 AI 结论都必须能回答：
+
+- 用了哪个岗位画像版本？
+- 用了哪个 Prompt 版本？
+- 用了哪个模型？
+- 输入材料是什么？
+- 输出结构是什么？
+- 为什么给这个分？
+- 哪些证据支持结论？
+- 是否被人工修正过？
+
+无法追溯的 AI 结果不得作为排序、推荐、导出依据。
+
+使用 LangChain / LangGraph 时，还必须能回答：
+
+- 使用了哪个 graph version？
+- 执行了哪些节点？
+- 哪个节点调用了模型？
+- 模型输出经过了哪个 schema 校验？
+- 失败发生在哪个节点？
+
+所有 LangGraph AI 调用必须进入 AI Assessment 审计链路。
+
+### 14.4 原始页面回链优先级高
+
+OriginalSourceLink 是核心对象，开发中不得将其简化为一个 `url` 字段。
+
+回链必须支持：平台标识、原始 URL、标准化 URL、外部候选人 ID、最后验证时间、失效状态、备用定位信息、高匹配截图存证。
+
+### 14.5 数据安全优先
+
+候选人数据、简历附件、联系方式属于敏感数据。
+
+要求：
+
+- 最小化保存，分级授权访问。
+- MVP 当前至少按用户身份或 `ownerId` 控制访问；访问记录审计、导出记录审计后续实现。
+- 附件使用对象存储后续实现；MVP 当前允许本地附件存储，但 API 响应不得暴露本地 `storagePath`。
+- 对象存储临时访问链接后续实现，届时必须有过期时间。
+- 日志不得输出敏感原文。
+- 高匹配截图存证必须受策略限制。
+
+### 14.6 幂等优先
+
+以下操作必须幂等：CSV 导入、插件候选人上报、候选人抓取、硬性过滤、AI 评估、重评估、任务完成、导出。
+
+幂等键建议由以下信息组成：
+
+```text
+search_run_id + candidate_source + external_candidate_id + operation_type
+```
+
+后续多租户版本补充 `tenant_id`。
+
+### 14.7 历史结果不得被静默改写
+
+以下数据一旦用于 SearchRun，应保留历史版本：JobProfile、SearchCriteria、Prompt version、候选人快照/摘要、Original source link metadata。
+
+AI 评估遵循 `docs/00-requirements-baseline.md` 第 3 节口径：业务评估结果采用覆盖式重评估（同一候选人 + 同一 `JobProfileVersion` 只保留最新），但 AI 审计记录保留所有调用的输入/输出快照，历史事实通过审计链路可追溯。
+
+允许新增版本，不允许静默覆盖历史事实。

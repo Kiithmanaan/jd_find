@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 const read = (path) => readFileSync(path, "utf8");
 const failures = [];
@@ -48,6 +49,35 @@ for (const expected of [
   "前端",
 ]) {
   assertIncludes(codeTodo, expected, `Code TODO document should include task keyword ${expected}`);
+}
+
+const envExample = read(".env.example");
+const declaredEnvKeys = new Set(
+  Array.from(envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm), (match) => match[1]),
+);
+
+const consumedEnvKeys = new Set();
+const sourceFiles = readdirSync("src", { recursive: true }).filter((file) => file.endsWith(".ts"));
+for (const file of sourceFiles) {
+  const content = read(join("src", file));
+  for (const match of content.matchAll(/process\.env\.([A-Z][A-Z0-9_]+)/g)) {
+    consumedEnvKeys.add(match[1]);
+  }
+  for (const match of content.matchAll(/^\s*([A-Z][A-Z0-9_]{2,}):\s*z\./gm)) {
+    consumedEnvKeys.add(match[1]);
+  }
+}
+if (existsSync("prisma/schema.prisma")) {
+  for (const match of read("prisma/schema.prisma").matchAll(/env\("([A-Z][A-Z0-9_]+)"\)/g)) {
+    consumedEnvKeys.add(match[1]);
+  }
+}
+for (const key of [...consumedEnvKeys].sort()) {
+  assertIncludes(
+    { includes: (expected) => declaredEnvKeys.has(expected) },
+    key,
+    ".env.example should declare env var consumed by src or prisma schema",
+  );
 }
 
 if (failures.length > 0) {
