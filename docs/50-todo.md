@@ -31,9 +31,13 @@
 - 真实 Source Adapter：主工程只实现合规的通用 HTTP 或内部数据源 Adapter，不实现第三方平台风控规避；继续维护 SourceLead/OriginalSourceLink 契约。
 - 软性条件生成 Agent：需要补齐画像侧生成、双层 schema 校验及成功/失败审计。
 - 认证增强：优先实现修改密码，再评估 refresh token 和忘记密码。
-- 产品前端：轻量工作台已接真实 API；完整产品视觉、浏览器插件本体和非核心运营页面后置。
+- 产品前端：轻量工作台已接真实 API，且已把画像详情、寻访确认、寻访任务列表、硬筛配置查看这几个共享组件接回工作台；完整产品视觉（独立路由页面）、浏览器插件本体和非核心运营页面仍后置。
+- 列表类端点缺失：目前没有 `GET /api/job-profiles`（按用户列出画像）和 `GET /api/search-runs`（按用户/画像列出寻访任务）。画像详情面板和寻访任务列表面板已接入真实类型契约，但受限于这两个端点缺失——画像内容靠当前确认版本现拼、任务列表只能展示当前手动追踪的单条记录，不是真正的列表页；补齐这两个端点后组件本身不需要再改。
+- 前端测试覆盖为零：`web/` 下没有任何测试文件，新接入的共享组件目前只能靠手动浏览器验证，没有回归保护。
 
-已完成：统一 AI Assessment Provider 接线、BullMQ 插件聚合、批次幂等、OriginalSourceLink 主链路、不可变评估历史、附件 storage key 和前端核心 API 闭环。
+已完成：统一 AI Assessment Provider 接线、BullMQ 插件聚合、批次幂等、OriginalSourceLink 主链路、不可变评估历史、附件 storage key、前端核心 API 闭环、前端共享组件迁移到统一类型契约（`web/src/lib/api-types.ts`）并接回工作台、清理前端 mock 数据与孤儿代码（删除 `lib/types.ts`/`mock-data.ts`/`hooks/queries.ts`/`AddCandidateDialog`）、CI Node 版本与 `engines` 声明不一致的修复（此前 CI 自建立起就一直失败，未被发现）。
+
+不做（产品决策）：Web 端手动添加候选人——真实候选人提交只走插件 Plugin Token 通道，Web 用户没有对应权限边界，决定不新增该端点，已删除对应的 `AddCandidateDialog` 组件。
 
 ## 5. MVP 后复核风险
 
