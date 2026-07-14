@@ -4,10 +4,15 @@ import { Card, CardContent } from "../ui/card.js";
 import { Badge } from "../ui/badge.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select.js";
 import { EmptyState } from "./EmptyState.js";
-import type { SearchRun, SearchRunStatus } from "../../lib/types.js";
+import type { SearchRun, SearchRunStatus } from "../../lib/api-types.js";
+
+/** 真实的列出 SearchRun 端点尚未实现，jobProfileTitle 需由调用方联表补上再传入。 */
+export interface SearchRunListItem extends SearchRun {
+  jobProfileTitle: string;
+}
 
 export interface SearchRunListPanelProps {
-  searchRuns: SearchRun[];
+  searchRuns: SearchRunListItem[];
   onSelectRun: (id: string) => void;
   onNavigateToProfiles: () => void;
 }
@@ -17,6 +22,7 @@ const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "ou
   Running: "default",
   Failed: "destructive",
   Cancelled: "destructive",
+  Interrupted: "destructive",
   Created: "secondary",
   Acquired: "default",
   Deduplicated: "default",
@@ -43,6 +49,7 @@ export function SearchRunListPanel(props: SearchRunListPanelProps): React.ReactE
   const completedCount = props.searchRuns.filter((r) => r.status === "Completed").length;
   const failedCount = props.searchRuns.filter((r) => r.status === "Failed").length;
   const cancelledCount = props.searchRuns.filter((r) => r.status === "Cancelled").length;
+  const interruptedCount = props.searchRuns.filter((r) => r.status === "Interrupted").length;
 
   if (total === 0) {
     return (
@@ -88,6 +95,11 @@ export function SearchRunListPanel(props: SearchRunListPanelProps): React.ReactE
             已取消 <span className="font-mono font-medium">{cancelledCount}</span>
           </span>
         ) : null}
+        {interruptedCount > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-red-700">
+            已中止 <span className="font-mono font-medium">{interruptedCount}</span>
+          </span>
+        ) : null}
       </div>
 
       {/* 状态筛选 */}
@@ -102,6 +114,7 @@ export function SearchRunListPanel(props: SearchRunListPanelProps): React.ReactE
           <SelectItem value="All">全部状态</SelectItem>
           <SelectItem value="Running">进行中</SelectItem>
           <SelectItem value="Completed">已完成</SelectItem>
+          <SelectItem value="Interrupted">已中止</SelectItem>
           <SelectItem value="Failed">失败</SelectItem>
           <SelectItem value="Cancelled">已取消</SelectItem>
         </SelectContent>

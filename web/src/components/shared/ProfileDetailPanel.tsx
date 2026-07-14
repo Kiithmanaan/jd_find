@@ -4,11 +4,11 @@ import { Card, CardContent } from "../ui/card.js";
 import { Badge } from "../ui/badge.js";
 import { KeyValue } from "./KeyValue.js";
 import { EmptyState } from "./EmptyState.js";
-import type { JobProfile, JobProfileVersion, SearchRun } from "../../lib/types.js";
-import { mockProfileVersions } from "../../lib/mock-data.js";
+import type { JobProfile, JobProfileVersion, SearchRun } from "../../lib/api-types.js";
 
 export interface ProfileDetailPanelProps {
   profile: JobProfile;
+  versions: JobProfileVersion[];
   searchRuns: SearchRun[];
   onBack: () => void;
   onEdit: (profile: JobProfile) => void;
@@ -18,6 +18,7 @@ export interface ProfileDetailPanelProps {
 
 export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactElement {
   const p = props.profile;
+  const currentVersion = props.versions.find((v) => v.id === p.currentVersionId);
   const runs = [...props.searchRuns].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
@@ -52,10 +53,10 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
         <CardContent className="pt-4 space-y-3">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold">{p.title}</h3>
-            <Badge variant={p.status === "Confirmed" ? "default" : "secondary"}>v{p.version}</Badge>
+            {currentVersion ? <Badge variant={p.status === "Confirmed" ? "default" : "secondary"}>v{currentVersion.version}</Badge> : null}
             <Badge variant="outline">{p.status}</Badge>
           </div>
-          <p className="text-xs text-muted-foreground">{p.owner} · {p.updatedAt}</p>
+          {p.confirmedAt ? <p className="text-xs text-muted-foreground">确认于 {formatDate2(p.confirmedAt)}</p> : null}
           {p.jdText ? (
             <div className="text-xs border rounded p-2 bg-muted/20 whitespace-pre-wrap">{p.jdText}</div>
           ) : null}
@@ -67,11 +68,14 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
         <CardContent className="pt-4 space-y-2">
           <h3 className="text-sm font-semibold">搜索条件</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <KeyValue label="关键词" value={p.searchCondition.keywords} />
-            <KeyValue label="城市" value={p.searchCondition.cities || "不限"} />
-            <KeyValue label="行业" value={p.searchCondition.industries || "不限"} />
-            <KeyValue label="学历" value={p.searchCondition.educationLevels || "不限"} />
-            <KeyValue label="工作年限" value={p.searchCondition.minYearsOfExperience > 0 ? `${p.searchCondition.minYearsOfExperience} 年以上` : "不限"} />
+            <KeyValue label="关键词" value={p.searchCondition.keywords.join("、") || "不限"} />
+            <KeyValue label="城市" value={p.searchCondition.cities.join("、") || "不限"} />
+            <KeyValue label="行业" value={p.searchCondition.industries.join("、") || "不限"} />
+            <KeyValue label="学历" value={p.searchCondition.educationLevels.join("、") || "不限"} />
+            <KeyValue
+              label="工作年限"
+              value={p.searchCondition.minYearsOfExperience ? `${p.searchCondition.minYearsOfExperience} 年以上` : "不限"}
+            />
           </div>
         </CardContent>
       </Card>
@@ -82,8 +86,8 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
           <h3 className="text-sm font-semibold">硬性条件</h3>
           {p.hardRequirements.length > 0 ? (
             <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
-              {p.hardRequirements.map((req, i) => (
-                <li key={i}>{req}</li>
+              {p.hardRequirements.map((req) => (
+                <li key={req.key}>{req.label}</li>
               ))}
             </ul>
           ) : <p className="text-xs text-muted-foreground">未设置</p>}
@@ -94,7 +98,13 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
       <Card>
         <CardContent className="pt-4 space-y-2">
           <h3 className="text-sm font-semibold">软性条件</h3>
-          <p className="text-xs text-muted-foreground whitespace-pre-wrap">{p.softRequirements || "未设置"}</p>
+          {p.softRequirements.length > 0 ? (
+            <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+              {p.softRequirements.map((req) => (
+                <li key={req.key}>{req.label}：{req.description}</li>
+              ))}
+            </ul>
+          ) : <p className="text-xs text-muted-foreground">未设置</p>}
         </CardContent>
       </Card>
 
@@ -102,7 +112,7 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
       <Card>
         <CardContent className="pt-4 space-y-2">
           <h3 className="text-sm font-semibold">版本历史</h3>
-          {renderVersions(p.id, p.version)}
+          {renderVersions(props.versions, p.currentVersionId)}
         </CardContent>
       </Card>
 
@@ -144,8 +154,7 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
 
 // ─── 辅助函数 ──────────────────────────────────────────────────────
 
-function renderVersions(profileId: string, currentVersion: number): React.ReactElement {
-  const versions = mockProfileVersions[profileId] ?? [];
+function renderVersions(versions: JobProfileVersion[], currentVersionId: string | undefined): React.ReactElement {
   if (versions.length === 0) {
     return <p className="text-xs text-muted-foreground">暂无版本记录。</p>;
   }
@@ -154,7 +163,7 @@ function renderVersions(profileId: string, currentVersion: number): React.ReactE
   return (
     <div className="space-y-1">
       {sorted.map((v) => {
-        const isCurrent = v.version === currentVersion;
+        const isCurrent = v.id === currentVersionId;
         return (
           <div
             key={v.id}
