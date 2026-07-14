@@ -5,10 +5,10 @@ import { Card, CardContent } from "../ui/card.js";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog.js";
 import { KeyValue } from "./KeyValue.js";
 import { ErrorState } from "./ErrorState.js";
-import type { JobProfile } from "../../lib/types.js";
+import type { JobProfileVersion } from "../../lib/api-types.js";
 
 export interface CreateSearchRunDialogProps {
-  profile: JobProfile;
+  profile: JobProfileVersion;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (targetResultCount: number) => Promise<void>;
@@ -44,8 +44,8 @@ export function CreateSearchRunDialog(props: CreateSearchRunDialogProps): React.
               <h3 className="text-sm font-semibold">岗位画像摘要</h3>
               <KeyValue label="岗位名称" value={props.profile.title} />
               <KeyValue label="版本" value={`v${props.profile.version}`} />
-              <KeyValue label="关键词" value={props.profile.searchCondition.keywords} />
-              <KeyValue label="硬性条件" value={props.profile.hardRequirements.join("；")} />
+              <KeyValue label="关键词" value={props.profile.searchCondition.keywords.join("、")} />
+              <KeyValue label="硬性条件" value={props.profile.hardRequirements.map((req) => req.label).join("；")} />
             </CardContent>
           </Card>
 

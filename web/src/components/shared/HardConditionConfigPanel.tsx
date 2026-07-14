@@ -5,7 +5,7 @@ import { KeyValue } from "./KeyValue.js";
 import { EmptyState } from "./EmptyState.js";
 import { ErrorState } from "./ErrorState.js";
 import { LoadingSkeleton } from "./LoadingSkeleton.js";
-import type { HardConditionConfigDimension } from "../../lib/types.js";
+import type { HardConditionConfigDimension } from "../../lib/api-types.js";
 
 export interface HardConditionConfigPanelProps {
   dimensions: HardConditionConfigDimension[] | undefined;
