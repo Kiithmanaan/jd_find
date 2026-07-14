@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { Redis } from "ioredis";
 import { BullMqSearchRunQueue } from "../infrastructure/bullmq/bullmq-search-run-queue.js";
+import { RedisRateLimiter } from "../infrastructure/redis/redis-rate-limiter.js";
 import {
   createPrismaClient,
   PrismaHardConditionConfigRepository,
@@ -24,14 +26,19 @@ export interface CreateProductionAppOptions {
 export function createProductionApp(options: CreateProductionAppOptions = {}): FastifyInstance {
   const prisma = createPrismaClient();
   const jwtSecret = readRequiredEnv("JWT_SECRET");
+  const redisHost = options.redisHost ?? process.env.REDIS_HOST ?? "127.0.0.1";
+  const redisPort = options.redisPort ?? Number(process.env.REDIS_PORT ?? 6379);
   const searchRunQueue = new BullMqSearchRunQueue({
     queueName: options.queueName ?? process.env.SEARCH_RUN_QUEUE_NAME ?? "search-runs",
     connection: {
-      host: options.redisHost ?? process.env.REDIS_HOST ?? "127.0.0.1",
-      port: options.redisPort ?? Number(process.env.REDIS_PORT ?? 6379),
+      host: redisHost,
+      port: redisPort,
       lazyConnect: true,
     },
   });
+
+  const rateLimiterRedis = new Redis({ host: redisHost, port: redisPort, lazyConnect: true });
+  const rateLimiter = new RedisRateLimiter(rateLimiterRedis);
 
   const app = createApp({
     jobProfiles: new PrismaJobProfileRepository(prisma),
@@ -50,10 +57,17 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
       enabled: true,
       jwtSecret,
     },
+    rateLimiter,
+    pluginRateLimits: {
+      candidateSubmissionPerWindow: Number(process.env.PLUGIN_CANDIDATE_RATE_LIMIT ?? 60),
+      attachmentUploadPerWindow: Number(process.env.PLUGIN_ATTACHMENT_RATE_LIMIT ?? 30),
+      windowSeconds: Number(process.env.PLUGIN_RATE_LIMIT_WINDOW_SECONDS ?? 60),
+    },
   });
 
   app.addHook("onClose", async () => {
     await searchRunQueue.close();
+    await rateLimiterRedis.quit();
     await prisma.$disconnect();
   });
 
