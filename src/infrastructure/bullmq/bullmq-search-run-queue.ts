@@ -20,7 +20,7 @@ export class BullMqSearchRunQueue implements SearchRunQueue, PluginAggregationQu
 
   async enqueueOneTimeSearch(job: OneTimeSearchJob): Promise<{ jobId: string; searchRunId: string }> {
     const queuedJob = await this.queue.add(ONE_TIME_SEARCH_JOB_NAME, job, {
-      jobId: `${ONE_TIME_SEARCH_JOB_NAME}:${job.searchRunId}`,
+      jobId: `${ONE_TIME_SEARCH_JOB_NAME}-${job.searchRunId}`,
       attempts: 1,
       removeOnComplete: 100,
       removeOnFail: 100,
@@ -30,13 +30,13 @@ export class BullMqSearchRunQueue implements SearchRunQueue, PluginAggregationQu
   }
 
   async schedule(searchRunId: string, delayMs: number): Promise<void> {
-    const jobId = `${PLUGIN_AGGREGATION_JOB_NAME}:${searchRunId}`;
+    const jobId = `${PLUGIN_AGGREGATION_JOB_NAME}-${searchRunId}`;
     if (await this.queue.getJob(jobId)) return;
     await this.queue.add(PLUGIN_AGGREGATION_JOB_NAME, { searchRunId }, { jobId, delay: delayMs, removeOnComplete: true, removeOnFail: 100 });
   }
 
   async cancel(searchRunId: string): Promise<void> {
-    const job = await this.queue.getJob(`${PLUGIN_AGGREGATION_JOB_NAME}:${searchRunId}`);
+    const job = await this.queue.getJob(`${PLUGIN_AGGREGATION_JOB_NAME}-${searchRunId}`);
     if (job) await job.remove();
   }
 

@@ -27,7 +27,7 @@
 ## 4. 近期实现风险
 
 - 插件提交限流：候选人提交和附件上传仍需按 Plugin Token + SearchRun 增加保护型限流，并返回 `RateLimited`。
-- 部署前集成验证：需要在真实 PostgreSQL、Redis、API、Worker 和附件目录上跑通 migration、登录、插件提交、附件与 AI 审计 smoke。
+- 生产错误可观测性缺失：API 的 `Fastify({ logger: false })` 加上兜底 `setErrorHandler` 只返回 `{error:"InternalServerError"}`，不打印任何日志——这次集成验证排查 BullMQ 报错时，如果不临时加 `console.error` 根本看不到真实异常。需要补至少一行服务端错误日志（stdout 或接入日志系统），否则生产环境出问题基本没法排查。
 - 真实 Source Adapter：主工程只实现合规的通用 HTTP 或内部数据源 Adapter，不实现第三方平台风控规避；继续维护 SourceLead/OriginalSourceLink 契约。
 - 软性条件生成 Agent：需要补齐画像侧生成、双层 schema 校验及成功/失败审计。
 - 认证增强：优先实现修改密码，再评估 refresh token 和忘记密码。
@@ -35,7 +35,13 @@
 - 列表类端点缺失：目前没有 `GET /api/job-profiles`（按用户列出画像）和 `GET /api/search-runs`（按用户/画像列出寻访任务）。画像详情面板和寻访任务列表面板已接入真实类型契约，但受限于这两个端点缺失——画像内容靠当前确认版本现拼、任务列表只能展示当前手动追踪的单条记录，不是真正的列表页；补齐这两个端点后组件本身不需要再改。
 - 前端测试覆盖为零：`web/` 下没有任何测试文件，新接入的共享组件目前只能靠手动浏览器验证，没有回归保护。
 
-已完成：统一 AI Assessment Provider 接线、BullMQ 插件聚合、批次幂等、OriginalSourceLink 主链路、不可变评估历史、附件 storage key、前端核心 API 闭环、前端共享组件迁移到统一类型契约（`web/src/lib/api-types.ts`）并接回工作台、清理前端 mock 数据与孤儿代码（删除 `lib/types.ts`/`mock-data.ts`/`hooks/queries.ts`/`AddCandidateDialog`）、CI Node 版本与 `engines` 声明不一致的修复（此前 CI 自建立起就一直失败，未被发现）。
+已完成：统一 AI Assessment Provider 接线、BullMQ 插件聚合、批次幂等、OriginalSourceLink 主链路、不可变评估历史、附件 storage key、前端核心 API 闭环、前端共享组件迁移到统一类型契约（`web/src/lib/api-types.ts`）并接回工作台、清理前端 mock 数据与孤儿代码（删除 `lib/types.ts`/`mock-data.ts`/`hooks/queries.ts`/`AddCandidateDialog`）、CI Node 版本与 `engines` 声明不一致的修复（此前 CI 自建立起就一直失败，未被发现）、**部署前集成验证**（见下）。
+
+### 部署前集成验证结果
+
+在真实 PostgreSQL + Redis + API + Worker 上跑通了完整链路：migration、Web/Plugin 登录、mock 一次性寻访（经 BullMQ 队列 + Worker 异步处理）、硬筛淘汰/通过分流、AI 评估（mock provider）、AI 审计查询、候选人汇总、重新评估、插件 SearchRun 创建、插件候选人批量提交、附件上传与下载、SearchRun 取消——全部验证通过。
+
+过程中发现并修复了一个真实的生产环境阻断性 bug：`bullmq-search-run-queue.ts` 用 `:` 拼接自定义 Job ID（如 `one-time-search:<uuid>`），这在写代码时的 bullmq 版本上是合法的，但 `package.json` 声明的 `^5.26.2` 允许安装到的新版本（实测 `5.78.0`）新增了校验规则，直接拒绝含 `:` 的自定义 ID，导致任何插件/mock 一次性寻访请求在真实 BullMQ 上必定 500。测试套件测不出来是因为单测只测了 `InMemorySearchRunQueue`，从没有真正过一遍 BullMQ——这正是本条 TODO 存在的原因。已修复为 `-` 分隔符。
 
 不做（产品决策）：Web 端手动添加候选人——真实候选人提交只走插件 Plugin Token 通道，Web 用户没有对应权限边界，决定不新增该端点，已删除对应的 `AddCandidateDialog` 组件。
 
