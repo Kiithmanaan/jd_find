@@ -19,6 +19,8 @@ export * from "./infrastructure/csv/csv-source-adapter.js";
 export * from "./infrastructure/http/http-ai-assessment.js";
 export * from "./infrastructure/memory/in-memory-search-run-queue.js";
 export * from "./infrastructure/memory/in-memory-repositories.js";
+export * from "./infrastructure/memory/in-memory-rate-limiter.js";
+export * from "./infrastructure/redis/redis-rate-limiter.js";
 export * from "./infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
 export * from "./infrastructure/prisma/prisma-mappers.js";
 export * from "./infrastructure/prisma/prisma-repositories.js";

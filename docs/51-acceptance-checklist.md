@@ -13,6 +13,7 @@
 | 前端构建 | `npm run web:build` | 构建成功 | 已完成 |
 | CI | GitHub Actions | push 后执行全量检查 | 已完成 |
 | 部署前真实环境集成验证 | 手动 smoke（真实 PostgreSQL + Redis + API + Worker） | migration、登录、一次性寻访（含 BullMQ 异步处理）、硬筛、AI 评估、审计、重评估、插件提交、附件上传下载、取消全部跑通 | 已完成 |
+| 生产错误日志 | 自动化测试（`tests/api.test.ts`） | API 未捕获异常时 `setErrorHandler` 至少输出一行结构化 stderr 日志（含请求方法、路径、SearchRun id、错误名称与消息） | 已完成 |
 
 ## 2. 认证与账号
 
@@ -34,6 +35,8 @@
 | SearchRun 取消 | API 测试 | Running 可取消，插件停止提交 | 已完成 |
 | 列出所有 JobProfile | API 测试 | `GET /api/job-profiles` 按当前用户过滤返回列表 | 后置 |
 | 列出所有 SearchRun | API 测试 | `GET /api/search-runs` 按当前用户/画像过滤返回列表 | 后置 |
+| 插件候选人提交限流 | 自动化测试（`tests/api.test.ts`、`tests/rate-limiter.test.ts`） | 同一 Plugin Token + SearchRun 超过阈值时返回 `429 RateLimited` 并带 `retryAfterSeconds` | 已完成（`RedisRateLimiter` 生产路径待真实 Redis smoke 验证，见 `docs/50-todo.md`） |
+| 插件附件上传限流 | 自动化测试（`tests/api.test.ts`、`tests/rate-limiter.test.ts`） | 同一 Plugin Token + SearchRun 超过阈值时返回 `429 RateLimited` 并带 `retryAfterSeconds` | 已完成（`RedisRateLimiter` 生产路径待真实 Redis smoke 验证，见 `docs/50-todo.md`） |
 
 ## 4. 候选人、筛选与评估
 

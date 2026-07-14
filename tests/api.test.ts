@@ -655,6 +655,168 @@ test("插件可上传、覆盖候选人附件，Web 可下载", async () => {
   assert.equal("storagePath" in query.json().candidates[0].resumeAttachment, false);
 });
 
+test("插件候选人提交超过限流阈值返回 429 RateLimited", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-ratelimit",
+    users,
+    searchRuns,
+    jobProfiles,
+    pluginRateLimits: { candidateSubmissionPerWindow: 1, windowSeconds: 60 },
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const webLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+  await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: { authorization: `Bearer ${webLogin.json().token}` },
+    payload: { jobProfile: createConfirmedJobProfile(), sourceType: "plugin", targetResultCount: 10 },
+  });
+  const pluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+
+  const submitPayload = {
+    batchId: "batch-1",
+    sourcePlatform: "MockPlatform",
+    candidates: createCandidateDrafts().slice(0, 1),
+  };
+
+  const firstSubmit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-ratelimit/candidates",
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+    payload: submitPayload,
+  });
+  assert.equal(firstSubmit.statusCode, 202);
+
+  const secondSubmit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-ratelimit/candidates",
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+    payload: { ...submitPayload, batchId: "batch-2" },
+  });
+  assert.equal(secondSubmit.statusCode, 429);
+  assert.equal(secondSubmit.json().error, "RateLimited");
+  assert.ok(secondSubmit.json().retryAfterSeconds > 0);
+  assert.ok(secondSubmit.headers["retry-after"]);
+});
+
+test("插件附件上传超过限流阈值返回 429 RateLimited", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const attachmentStorageDir = await mkdtemp(join(tmpdir(), "jd-attachments-"));
+  const app = createApp({
+    idGenerator: () => "plugin-run-attachment-ratelimit",
+    users,
+    searchRuns,
+    jobProfiles,
+    attachmentStorageDir,
+    pluginRateLimits: { attachmentUploadPerWindow: 1, windowSeconds: 60 },
+    auth: {
+      enabled: true,
+      jwtSecret: "test-secret",
+      webTokenTtlSeconds: 3600,
+      pluginTokenTtlSeconds: 3600,
+    },
+  });
+
+  const webLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+  const pluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+  await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: { authorization: `Bearer ${webLogin.json().token}` },
+    payload: { jobProfile: createConfirmedJobProfile(), sourceType: "plugin", targetResultCount: 10 },
+  });
+  const submit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-attachment-ratelimit/candidates",
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+    payload: { batchId: "batch-1", candidates: createCandidateDrafts().slice(0, 1) },
+  });
+  const saved = await searchRuns.findById("plugin-run-attachment-ratelimit");
+  const candidateId = saved?.candidates[0]?.id;
+  assert.equal(submit.statusCode, 202);
+
+  const uploadPayload = {
+    filename: "resume.pdf",
+    contentType: "application/pdf",
+    contentBase64: Buffer.from("first").toString("base64"),
+  };
+
+  const firstUpload = await app.inject({
+    method: "POST",
+    url: `/api/plugin/search-runs/plugin-run-attachment-ratelimit/candidates/${candidateId}/resume-attachment`,
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+    payload: uploadPayload,
+  });
+  assert.equal(firstUpload.statusCode, 200);
+
+  const secondUpload = await app.inject({
+    method: "POST",
+    url: `/api/plugin/search-runs/plugin-run-attachment-ratelimit/candidates/${candidateId}/resume-attachment`,
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+    payload: uploadPayload,
+  });
+  assert.equal(secondUpload.statusCode, 429);
+  assert.equal(secondUpload.json().error, "RateLimited");
+});
+
+test("API 未捕获异常时输出结构化错误日志", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  searchRuns.findById = async () => {
+    throw new Error("boom");
+  };
+  const app = createApp({ searchRuns });
+
+  const originalConsoleError = console.error;
+  const logs: string[] = [];
+  console.error = (message?: unknown) => {
+    logs.push(String(message));
+  };
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/search-runs/broken-run",
+    });
+
+    assert.equal(response.statusCode, 500);
+    assert.equal(response.json().error, "InternalServerError");
+    assert.equal(logs.length, 1);
+    const logged = JSON.parse(logs[0]);
+    assert.equal(logged.method, "GET");
+    assert.equal(logged.path, "/api/search-runs/broken-run");
+    assert.equal(logged.errorMessage, "boom");
+  } finally {
+    console.error = originalConsoleError;
+  }
+});
+
 test("认证开启后过期 token 返回 TokenExpired", async () => {
   const user = createUser("user-1", "hunter@example.test", "secret");
   const users = new InMemoryUserRepository([user]);

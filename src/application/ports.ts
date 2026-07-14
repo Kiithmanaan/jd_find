@@ -127,3 +127,12 @@ export interface AttachmentStorage {
   save(searchRunId: string, candidateId: string, filename: string, content: Buffer): Promise<string>;
   read(storageKey: string): Promise<Buffer>;
 }
+
+export interface RateLimitResult {
+  allowed: boolean;
+  retryAfterSeconds: number;
+}
+
+export interface RateLimiter {
+  consume(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult>;
+}

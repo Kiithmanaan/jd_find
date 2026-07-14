@@ -14,6 +14,7 @@ import type {
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
   PluginAggregationQueue,
+  RateLimiter,
 } from "../application/ports.js";
 import { signAuthToken, verifyAuthTokenResult, verifyPassword, type AuthTokenPayload } from "../application/auth.js";
 import { reassessJobProfileCandidates } from "../application/reassess-job-profile-candidates.js";
@@ -39,6 +40,7 @@ import {
   InMemoryCandidateAssessmentRepository,
   InMemoryReassessmentLockRepository,
 } from "../infrastructure/memory/in-memory-repositories.js";
+import { InMemoryRateLimiter } from "../infrastructure/memory/in-memory-rate-limiter.js";
 import { BatchConflictError, ReassessmentInProgressError } from "../domain/errors.js";
 import { LocalAttachmentStorage } from "../infrastructure/local/local-attachment-storage.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
@@ -75,6 +77,12 @@ export interface CreateAppOptions {
     webTokenTtlSeconds?: number;
     pluginTokenTtlSeconds?: number;
   };
+  rateLimiter?: RateLimiter;
+  pluginRateLimits?: {
+    candidateSubmissionPerWindow?: number;
+    attachmentUploadPerWindow?: number;
+    windowSeconds?: number;
+  };
 }
 
 export function createApp(options: CreateAppOptions = {}): FastifyInstance {
@@ -99,6 +107,10 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const attachmentStorageDir = options.attachmentStorageDir ?? process.env.RESUME_ATTACHMENT_DIR ?? join(process.cwd(), "data", "resume-attachments");
   const attachmentStorage = options.attachmentStorage ?? new LocalAttachmentStorage(attachmentStorageDir);
   const maxResumeAttachmentBytes = 20 * 1024 * 1024;
+  const rateLimiter = options.rateLimiter ?? new InMemoryRateLimiter();
+  const pluginRateLimitWindowSeconds = options.pluginRateLimits?.windowSeconds ?? 60;
+  const pluginCandidateSubmissionRateLimit = options.pluginRateLimits?.candidateSubmissionPerWindow ?? 60;
+  const pluginAttachmentUploadRateLimit = options.pluginRateLimits?.attachmentUploadPerWindow ?? 30;
 
   const pluginCandidateService = new PluginCandidateService({
     searchRuns,
@@ -241,6 +253,19 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     if (searchRun.ownerId && searchRun.ownerId !== currentUser.payload.sub) {
       return reply.code(403).send({ error: "AuthError", message: "Plugin cannot submit to this search run." });
     }
+
+    const submissionRateLimit = await rateLimiter.consume(
+      `candidates:${currentUser.payload.sub}:${searchRun.id}`,
+      pluginCandidateSubmissionRateLimit,
+      pluginRateLimitWindowSeconds,
+    );
+    if (!submissionRateLimit.allowed) {
+      return reply
+        .code(429)
+        .header("Retry-After", String(submissionRateLimit.retryAfterSeconds))
+        .send({ error: "RateLimited", message: "Too many candidate submissions.", retryAfterSeconds: submissionRateLimit.retryAfterSeconds });
+    }
+
     if (["Completed", "Cancelled", "Failed"].includes(searchRun.status)) {
       return reply.code(409).send({ error: `SearchRun${searchRun.status}`, message: `Search run is ${searchRun.status}.` });
     }
@@ -291,6 +316,18 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       }
       if (searchRun.ownerId && searchRun.ownerId !== currentUser.payload.sub) {
         return reply.code(403).send({ error: "AuthError", message: "Plugin cannot upload to this search run." });
+      }
+
+      const uploadRateLimit = await rateLimiter.consume(
+        `attachments:${currentUser.payload.sub}:${searchRun.id}`,
+        pluginAttachmentUploadRateLimit,
+        pluginRateLimitWindowSeconds,
+      );
+      if (!uploadRateLimit.allowed) {
+        return reply
+          .code(429)
+          .header("Retry-After", String(uploadRateLimit.retryAfterSeconds))
+          .send({ error: "RateLimited", message: "Too many attachment uploads.", retryAfterSeconds: uploadRateLimit.retryAfterSeconds });
       }
 
       const candidate = searchRun.candidates.find((item) => item.id === request.params.candidateId);
@@ -609,13 +646,27 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     });
   });
 
-  app.setErrorHandler(async (error, _request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     if (error.name === "DomainError") {
       return reply.code(422).send({
         error: error.name,
         message: error.message,
       });
     }
+
+    console.error(
+      JSON.stringify({
+        level: "error",
+        msg: "unhandled_api_error",
+        time: new Date().toISOString(),
+        method: request.method,
+        path: request.url,
+        params: request.params,
+        errorName: error.name,
+        errorMessage: error.message,
+        stack: error.stack,
+      }),
+    );
 
     return reply.code(500).send({
       error: "InternalServerError",
