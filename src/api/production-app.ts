@@ -11,10 +11,12 @@ import {
   PrismaCandidateAssessmentRepository,
   PrismaReassessmentLockRepository,
   PrismaClarificationInterviewSessionRepository,
+  PrismaSearchRefinementSuggestionRepository,
 } from "../infrastructure/prisma/prisma-repositories.js";
 import { PrismaAIAssessmentAuditSink } from "../infrastructure/prisma/prisma-ai-assessment-audit-sink.js";
 import { createAIAssessmentFromEnv } from "../infrastructure/ai/create-ai-assessment.js";
 import { createClarificationInterviewFromEnv } from "../infrastructure/ai/create-clarification-interview.js";
+import { createSearchRefinementFromEnv } from "../infrastructure/ai/create-search-refinement.js";
 import { createApp } from "./app.js";
 
 export interface CreateProductionAppOptions {
@@ -50,6 +52,8 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     reassessmentLocks: new PrismaReassessmentLockRepository(prisma),
     clarificationInterviews: new PrismaClarificationInterviewSessionRepository(prisma),
     clarificationInterviewAI: createClarificationInterviewFromEnv(process.env),
+    refinementSuggestions: new PrismaSearchRefinementSuggestionRepository(prisma),
+    searchRefinementAI: createSearchRefinementFromEnv(process.env),
     auth: {
       enabled: true,
       jwtSecret,

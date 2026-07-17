@@ -39,7 +39,11 @@ import {
   InMemoryCandidateAssessmentRepository,
   InMemoryReassessmentLockRepository,
 } from "../infrastructure/memory/in-memory-repositories.js";
-import { BatchConflictError, ReassessmentInProgressError } from "../domain/errors.js";
+import { BatchConflictError, ReassessmentInProgressError, RefinementInProgressError } from "../domain/errors.js";
+import { generateSearchRefinement } from "../application/generate-search-refinement.js";
+import { InMemorySearchRefinementSuggestionRepository } from "../infrastructure/memory/in-memory-repositories.js";
+import { MockSearchRefinement } from "../infrastructure/mock/mock-search-refinement.js";
+import type { SearchRefinementPort, SearchRefinementSuggestionRepository } from "../application/ports.js";
 import { LocalAttachmentStorage } from "../infrastructure/local/local-attachment-storage.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
 import { summarizeJobProfileReport, summarizeSearchRunReport } from "../domain/search-report.js";
@@ -85,6 +89,8 @@ export interface CreateAppOptions {
   attachmentStorage?: AttachmentStorage;
   clarificationInterviews?: ClarificationInterviewSessionRepository;
   clarificationInterviewAI?: ClarificationInterviewPort;
+  refinementSuggestions?: SearchRefinementSuggestionRepository;
+  searchRefinementAI?: SearchRefinementPort;
   auth?: {
     enabled?: boolean;
     jwtSecret?: string;
@@ -125,6 +131,10 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     interviewAI: clarificationInterviewAI,
     idGenerator: options.idGenerator ? () => `${options.idGenerator!()}-interview` : undefined,
   });
+
+  const refinementSuggestions =
+    options.refinementSuggestions ?? new InMemorySearchRefinementSuggestionRepository();
+  const searchRefinementAI = options.searchRefinementAI ?? new MockSearchRefinement();
 
   const pluginCandidateService = new PluginCandidateService({
     searchRuns,
@@ -753,6 +763,66 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       }
       throw error;
     }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/search-runs/:id/refinement-suggestions", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+    if (searchRun.status !== "Completed") {
+      return reply.code(422).send({
+        error: "RefinementNotReady",
+        message: "Search refinement requires a completed search run.",
+      });
+    }
+
+    const jobProfile = await jobProfiles.findById(searchRun.jobProfileId);
+    if (!jobProfile) {
+      return reply.code(422).send({ error: "SearchRunInvalid", message: "Search run job profile was not found." });
+    }
+
+    // 锁键空间用 "refinement:" 前缀与重评估隔离（锁表两列无 FK，见 docs/11 决策记录）。
+    const lockKey = `refinement:${searchRun.id}`;
+    if (!await reassessmentLocks.tryAcquire(jobProfile.id, lockKey)) {
+      return reply.code(409).send({ error: "RefinementInProgress", message: new RefinementInProgressError().message });
+    }
+    try {
+      const suggestion = await generateSearchRefinement(searchRun, jobProfile, {
+        refinementAI: searchRefinementAI,
+        suggestions: refinementSuggestions,
+        aiAssessmentAudit: aiAssessmentAudits,
+      });
+      return reply.code(201).send({ suggestion });
+    } finally {
+      await reassessmentLocks.release(jobProfile.id, lockKey);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id/refinement-suggestions", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+
+    const suggestions = await refinementSuggestions.findBySearchRunId(searchRun.id);
+    return reply.code(200).send({ searchRunId: searchRun.id, suggestions });
   });
 
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {

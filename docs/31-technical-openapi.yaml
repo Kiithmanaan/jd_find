@@ -195,6 +195,65 @@ paths:
           $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
+  /search-runs/{id}/refinement-suggestions:
+    post:
+      summary: 触发搜索词迭代分析（推荐组 vs 淘汰组），产出下一轮搜索条件建议
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "201":
+          description: 生成的搜索条件建议
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestion]
+                properties:
+                  suggestion:
+                    $ref: "#/components/schemas/SearchRefinementSuggestion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+        "409":
+          description: 同一 SearchRun 的分析正在运行
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: SearchRun 未完成或无已评估候选人（RefinementNotReady）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      summary: 查询 SearchRun 的搜索条件建议历史（按创建时间降序）
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 建议列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, suggestions]
+                properties:
+                  searchRunId:
+                    type: string
+                  suggestions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchRefinementSuggestion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
   /search-runs/{id}/report:
     get:
       summary: 查询单次 SearchRun 的寻访报告（当轮快照口径，重评估不回写）
@@ -749,6 +808,58 @@ components:
                 type: string
               message:
                 type: string
+    SearchRefinementSuggestion:
+      type: object
+      description: 搜索词迭代分析产出的搜索条件建议，绑定生成时的画像版本。
+      required: [id, searchRunId, jobProfileId, jobProfileVersionId, suggestedSearchCondition, addedKeywords, droppedKeywords, reasoning, analysisSnapshot, provider, model, promptVersion, agentVersion, createdAt]
+      properties:
+        id:
+          type: string
+        searchRunId:
+          type: string
+        jobProfileId:
+          type: string
+        jobProfileVersionId:
+          type: string
+        suggestedSearchCondition:
+          type: object
+        addedKeywords:
+          type: array
+          items:
+            type: string
+        droppedKeywords:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+        analysisSnapshot:
+          type: object
+          required: [recommendedCount, eliminatedCount, recommendedTraits, eliminatedTraits]
+          properties:
+            recommendedCount:
+              type: integer
+            eliminatedCount:
+              type: integer
+            recommendedTraits:
+              type: array
+              items:
+                type: string
+            eliminatedTraits:
+              type: array
+              items:
+                type: string
+        provider:
+          type: string
+        model:
+          type: string
+        promptVersion:
+          type: string
+        agentVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     ClarificationInterviewSession:
       type: object
       description: 澄清访谈会话。turns 内嵌每轮 AI 调用元数据即审计；进行中含 currentQuestion，完成后含 draftOutput。

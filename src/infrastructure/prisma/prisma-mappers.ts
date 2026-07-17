@@ -12,6 +12,7 @@ import type {
   InterviewDraftOutput,
   InterviewTurn,
 } from "../../domain/clarification-interview.js";
+import type { SearchRefinementSuggestion } from "../../domain/search-refinement-contract.js";
 
 export type UserPersistenceRecord = {
   id: string;
@@ -459,6 +460,66 @@ export function toClarificationInterviewSessionDomain(
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     completedAt: record.completedAt ?? undefined,
+  };
+}
+
+export type SearchRefinementSuggestionPersistenceRecord = {
+  id: string;
+  searchRunId: string;
+  jobProfileId: string;
+  jobProfileVersionId: string;
+  suggestedSearchCondition: Prisma.JsonValue;
+  addedKeywords: Prisma.JsonValue;
+  droppedKeywords: Prisma.JsonValue;
+  reasoning: string;
+  analysisSnapshot: Prisma.JsonValue;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  agentVersion: string;
+  createdAt: Date;
+};
+
+export function toSearchRefinementSuggestionCreateInput(
+  suggestion: SearchRefinementSuggestion,
+): Prisma.SearchRefinementSuggestionRecordCreateInput {
+  return {
+    id: suggestion.id,
+    searchRun: { connect: { id: suggestion.searchRunId } },
+    jobProfileId: suggestion.jobProfileId,
+    jobProfileVersionId: suggestion.jobProfileVersionId,
+    suggestedSearchCondition: toJsonInput(suggestion.suggestedSearchCondition),
+    addedKeywords: toJsonInput(suggestion.addedKeywords),
+    droppedKeywords: toJsonInput(suggestion.droppedKeywords),
+    reasoning: suggestion.reasoning,
+    analysisSnapshot: toJsonInput(suggestion.analysisSnapshot),
+    provider: suggestion.provider,
+    model: suggestion.model,
+    promptVersion: suggestion.promptVersion,
+    agentVersion: suggestion.agentVersion,
+    createdAt: suggestion.createdAt,
+  };
+}
+
+export function toSearchRefinementSuggestionDomain(
+  record: SearchRefinementSuggestionPersistenceRecord,
+): SearchRefinementSuggestion {
+  return {
+    id: record.id,
+    searchRunId: record.searchRunId,
+    jobProfileId: record.jobProfileId,
+    jobProfileVersionId: record.jobProfileVersionId,
+    suggestedSearchCondition:
+      record.suggestedSearchCondition as unknown as SearchRefinementSuggestion["suggestedSearchCondition"],
+    addedKeywords: record.addedKeywords as unknown as string[],
+    droppedKeywords: record.droppedKeywords as unknown as string[],
+    reasoning: record.reasoning,
+    analysisSnapshot: record.analysisSnapshot as unknown as SearchRefinementSuggestion["analysisSnapshot"],
+    provider: record.provider,
+    model: record.model,
+    promptVersion: record.promptVersion,
+    agentVersion: record.agentVersion,
+    createdAt: record.createdAt,
   };
 }
 

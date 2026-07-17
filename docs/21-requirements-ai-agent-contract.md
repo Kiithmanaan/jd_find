@@ -217,6 +217,46 @@ prompt version 迁移说明：
 - 历史审计记录保留 v1 标识，与 v2 记录并存，属预期行为，用于区分两代评估口径。
 - HTTP AI Adapter 的外部服务需同步接受请求体中新增的 `negativeSignals` 与 `softRequirements[].verificationHint` 字段。
 
+## 6.1 搜索词迭代 Agent（search-refinement）
+
+定位：
+
+- SearchRun 完成后，对比"推荐"候选人与被淘汰候选人（硬筛淘汰 ∪ 不推荐）的简历特征，产出下一轮寻访的搜索条件建议。
+- 第一阶段由用户手动触发，HTTP 同步执行，同一 SearchRun 同时只允许一个分析（409）。
+- "待定"候选人不参与对比。
+- 推荐组为空时也必须产出结论（当前关键词可能过宽或过窄），不视为失败。
+
+输入：
+
+- `JobProfile`（当前搜索条件、排除信号）。
+- 推荐组候选人简历。
+- 淘汰组候选人简历与硬筛淘汰原因。
+
+输出契约：
+
+```json
+{
+  "suggestedSearchCondition": { "keywords": ["string"], "cities": [], "industries": [], "educationLevels": [] },
+  "addedKeywords": ["string"],
+  "droppedKeywords": ["string"],
+  "reasoning": "string"
+}
+```
+
+校验规则：
+
+- `reasoning` 必填，必须引用具体特征证据。
+- `suggestedSearchCondition.keywords` 至少 1 个。
+- `addedKeywords` / `droppedKeywords` 允许为空数组。
+
+持久化与审计：
+
+- 建议落库 `SearchRefinementSuggestionRecord`，绑定 `searchRunId` 与 `jobProfileVersionId`，一个 run 可多次生成、保留历史。
+- 审计写入 `AIAssessmentAuditRecord`，`agentType` 为 `search-refinement`；失败调用也保留输入快照与 prompt。
+- prompt version：`search-refinement-v1`；agent version：`jd-search-refinement-v1`；graph version：`search-refinement-graph-v1`。
+- Provider 默认 `mock`（确定性词频启发式，本身即可用 baseline），可切换 `langgraph-openai`（env：`SEARCH_REFINEMENT_PROVIDER` 等）。
+- 建议应用走既有草稿版本创建端点，由前端预填、用户确认，AI 不直接修改画像。
+
 ## 7. 关键信息检查
 
 每个维度输出：

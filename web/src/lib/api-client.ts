@@ -14,6 +14,8 @@ import type {
   JobProfileReportResponse,
   ClarificationInterviewSession,
   InterviewDraftOutput,
+  SearchRefinementSuggestion,
+  SearchRefinementSuggestionsResponse,
 } from "./api-types.js";
 
 export type ApiJobProfileVersion = JobProfileVersion;
@@ -63,6 +65,20 @@ export const realApi = {
   }),
   run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),
   runReport: (id: string) => apiRequest<SearchRunReportResponse>(`/api/search-runs/${id}/report`),
+  generateRefinement: (runId: string) => apiRequest<{ suggestion: SearchRefinementSuggestion }>(`/api/search-runs/${runId}/refinement-suggestions`, { method: "POST" }),
+  refinements: (runId: string) => apiRequest<SearchRefinementSuggestionsResponse>(`/api/search-runs/${runId}/refinement-suggestions`),
+  /** 应用搜索建议：建议的搜索条件 + 当前版本其余字段，创建草稿版本。 */
+  createDraftFromRefinement: (profileId: string, source: ApiJobProfileVersion, suggestion: SearchRefinementSuggestion) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: source.title,
+      jdText: source.jdText,
+      searchCondition: suggestion.suggestedSearchCondition,
+      hardRequirements: source.hardRequirements,
+      softRequirements: source.softRequirements,
+      negativeSignals: source.negativeSignals,
+    } satisfies JobProfileVersionDraftRequest),
+  }),
   startInterview: (profileId: string) => apiRequest<ClarificationInterviewSession>(`/api/job-profiles/${profileId}/clarification-interviews`, { method: "POST" }),
   answerInterview: (sessionId: string, answer: string) => apiRequest<ClarificationInterviewSession>(`/api/clarification-interviews/${sessionId}/answers`, {
     method: "POST",

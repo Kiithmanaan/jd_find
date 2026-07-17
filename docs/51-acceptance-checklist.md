@@ -43,6 +43,7 @@
 | 配置驱动硬筛 | 集成测试 | 淘汰/合格规则由配置驱动 | 已完成 |
 | AI 推荐结论 | 契约测试 | 输出推荐/待定/不推荐 | 已完成 |
 | 重新评估 | 集成测试 | 覆盖旧业务评估结果 | 已完成 |
+| 搜索词迭代闭环 | 自动化测试 + API 测试 + 浏览器端到端 | Completed run 可触发分析并落库建议（推荐组 vs 淘汰组词频/特征对比、新增词/移除词/理由）；未完成 run 422；并发 409；审计 agentType=`search-refinement`；工作台可查看建议并一键应用到草稿版本 | 已完成（migration 待部署时 `prisma migrate deploy` 复核） |
 | 澄清访谈 Agent | 自动化测试 + API 测试 + 浏览器端到端 | 七组话题顺序推进、一次一问附推荐答案；答完产出画像草稿（JD 文本/硬性条件建议/软性条件/排除信号/搜索关键词）；mock 与 langgraph provider 均可注入；工作台问答面板可完成访谈并用草稿创建版本草稿 | 已完成（migration 待部署时 `prisma migrate deploy` 复核） |
 | 寻访报告 | 自动化测试 + API 测试 + 浏览器检查 | `GET /api/search-runs/:id/report` 与 `GET /api/job-profiles/:id/report` 返回漏斗数字、Top 候选人、待定清单与跨 run 汇总；工作台面板可展示两级报告 | 已完成 |
 | 排除信号进评估契约 | 自动化测试 + 契约测试 + 浏览器端到端 | 画像可录入 `negativeSignals` 并随版本拷贝；评估 prompt 注入排除信号与 `verificationHint`；prompt version 升级为 `match-assessment-v2`；mock provider 命中排除信号追加风险点并降档；工作台可编辑排除信号并随草稿版本保存 | 已完成（migration 尚未在真实 PostgreSQL 上应用验证，部署时执行 `prisma migrate deploy` 复核） |

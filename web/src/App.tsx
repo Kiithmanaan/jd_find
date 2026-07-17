@@ -9,7 +9,8 @@ import { ProfileDetailPanel } from "./components/shared/ProfileDetailPanel.js";
 import { SearchRunReportPanel } from "./components/shared/SearchRunReportPanel.js";
 import { JobProfileReportPanel } from "./components/shared/JobProfileReportPanel.js";
 import { ClarificationInterviewPanel } from "./components/shared/ClarificationInterviewPanel.js";
-import type { ClarificationInterviewSession, JobProfile } from "./lib/api-types.js";
+import { SearchRefinementPanel } from "./components/shared/SearchRefinementPanel.js";
+import type { ClarificationInterviewSession, JobProfile, SearchRefinementSuggestion } from "./lib/api-types.js";
 
 const columns: ColumnDef<ApiCandidate>[] = [
   { header: "姓名", accessorFn: (row) => row.resume.name },
@@ -32,6 +33,7 @@ export function App(): React.JSX.Element {
   const [showRunReport, setShowRunReport] = useState(false);
   const [showProfileReport, setShowProfileReport] = useState(false);
   const [showInterview, setShowInterview] = useState(false);
+  const [showRefinement, setShowRefinement] = useState(false);
   const [interviewSession, setInterviewSession] = useState<ClarificationInterviewSession | undefined>(undefined);
   const [createRunDialogOpen, setCreateRunDialogOpen] = useState(false);
   const [draftSignalsText, setDraftSignalsText] = useState("");
@@ -75,6 +77,13 @@ export function App(): React.JSX.Element {
     if (!interviewSession) throw new Error("访谈会话不存在。");
     return realApi.answerInterview(interviewSession.id, answer);
   }, onSuccess: setInterviewSession });
+  const refinements = useQuery({ queryKey: ["refinements", runId], queryFn: () => realApi.refinements(runId), enabled: authenticated && Boolean(runId) && showRefinement });
+  const generateRefinement = useMutation({ mutationFn: () => realApi.generateRefinement(runId), onSuccess: () => client.invalidateQueries({ queryKey: ["refinements", runId] }) });
+  const applyRefinement = useMutation({ mutationFn: async (suggestion: SearchRefinementSuggestion) => {
+    const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
+    if (!source) throw new Error("未找到当前已确认画像版本。");
+    return realApi.createDraftFromRefinement(profileId, source, suggestion);
+  }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
   const applyInterviewDraft = useMutation({ mutationFn: async (session: ClarificationInterviewSession) => {
     const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
     const draft = session.draftOutput;
@@ -151,6 +160,23 @@ export function App(): React.JSX.Element {
           report={runReport.data}
           loading={runReport.isLoading}
           error={runReport.error?.message}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!runId} onClick={() => setShowRefinement((v) => !v)}>
+        {showRefinement ? "隐藏搜索词迭代建议" : "搜索词迭代建议"}
+      </button>
+      {showRefinement && <div className="mt-3 rounded border p-4">
+        <SearchRefinementPanel
+          suggestions={refinements.data?.suggestions ?? []}
+          currentVersionId={versions.data?.currentVersionId}
+          loading={refinements.isLoading}
+          generating={generateRefinement.isPending}
+          applying={applyRefinement.isPending}
+          error={(generateRefinement.error ?? applyRefinement.error ?? refinements.error)?.message}
+          onGenerate={() => generateRefinement.mutate()}
+          onApply={(suggestion) => applyRefinement.mutate(suggestion)}
         />
       </div>}
     </section>

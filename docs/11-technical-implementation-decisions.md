@@ -140,3 +140,10 @@ JobProfile Confirmed
 2. 是否接受第一阶段只接 Mock Source Adapter，不接真实平台。
 3. 是否接受第一阶段先落地 AI Assessment 契约、Mock AI 和通用 HTTP AI Adapter；真实模型服务由外部 AI endpoint 封装，生产 API 进程内接线后置。
 4. 是否优先实现 API + 领域 + Worker，不先做完整前端界面。
+
+## 10. 搜索词迭代闭环的锁复用决策
+
+搜索词迭代分析（`POST /api/search-runs/:id/refinement-suggestions`）复用 `ReassessmentLockRecord` 表做并发保护，锁键为 `tryAcquire(jobProfileId, "refinement:" + searchRunId)`——用 `"refinement:"` 前缀把键空间与重评估锁隔离。
+
+- 该表的 `jobProfileId` / `jobProfileVersionId` 两列均为无外键约束的 String，写入非版本 ID 字符串是安全的。
+- **注意**：将来若给 `jobProfileVersionId` 列加 FK 约束，必须先把 refinement 锁迁移到独立锁表，否则前缀键会违反约束。

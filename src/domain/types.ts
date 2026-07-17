@@ -166,7 +166,7 @@ export interface MatchAssessment {
   agentVersion: string;
 }
 
-export type AIAssessmentAuditAgentType = "job-profile" | "soft-condition" | "match-assessment";
+export type AIAssessmentAuditAgentType = "job-profile" | "soft-condition" | "match-assessment" | "search-refinement";
 export type AIAssessmentAuditStatus = "success" | "failure";
 
 export interface AIAssessmentAuditRecord {

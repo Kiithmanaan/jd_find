@@ -314,6 +314,85 @@ test("API 澄清访谈对不存在资源返回 404", async () => {
   assert.equal(answered.statusCode, 404);
 });
 
+test("API 支持搜索词迭代分析：生成建议、查询历史、未完成 run 拒绝", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const searchRunQueue = new InMemorySearchRunQueue();
+  const app = createApp({ idGenerator: () => "api-run-refine", searchRuns, searchRunQueue });
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      targetResultCount: 10,
+      candidates: createCandidateDrafts(),
+    },
+  });
+  const queuedJob = searchRunQueue.findJobById(response.json().jobId);
+  assert.ok(queuedJob);
+
+  const early = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(early.statusCode, 404);
+
+  const handler = new SearchRunJobHandler({
+    aiAssessment: new MockAIAssessment(),
+    searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
+  });
+  await handler.handleOneTimeSearch(queuedJob);
+
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(created.statusCode, 201);
+  const suggestion = created.json().suggestion;
+  assert.equal(suggestion.searchRunId, "api-run-refine");
+  assert.ok(suggestion.reasoning);
+  assert.ok(suggestion.suggestedSearchCondition.keywords.length >= 1);
+  assert.equal(suggestion.promptVersion, "search-refinement-v1");
+
+  const listed = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.json().suggestions.length, 1);
+
+  const audits = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-refine/ai-assessment-audits",
+  });
+  const refinementAudit = audits.json().records.find(
+    (record: { agentType: string }) => record.agentType === "search-refinement",
+  );
+  assert.ok(refinementAudit);
+});
+
+test("API 搜索词迭代分析对 Running 状态返回 422", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const app = createApp({ idGenerator: () => "api-run-refine-running", searchRuns });
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(created.statusCode, 202);
+
+  const refine = await app.inject({
+    method: "POST",
+    url: `/api/search-runs/${created.json().searchRunId}/refinement-suggestions`,
+  });
+  assert.equal(refine.statusCode, 422);
+  assert.equal(refine.json().error, "RefinementNotReady");
+});
+
 test("API 查询不存在资源的寻访报告返回 404", async () => {
   const app = createApp();
 

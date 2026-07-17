@@ -10,8 +10,10 @@ import type {
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
   ClarificationInterviewSessionRepository,
+  SearchRefinementSuggestionRepository,
 } from "../../application/ports.js";
 import type { ClarificationInterviewSession } from "../../domain/clarification-interview.js";
+import type { SearchRefinementSuggestion } from "../../domain/search-refinement-contract.js";
 import type {
   HardConditionDimension,
   HardConditionOption,
@@ -43,12 +45,46 @@ import {
   type JobProfileVersionPersistenceRecord,
   type SearchRunPersistenceRecord,
   type ClarificationInterviewSessionPersistenceRecord,
+  toSearchRefinementSuggestionCreateInput,
+  toSearchRefinementSuggestionDomain,
+  type SearchRefinementSuggestionPersistenceRecord,
 } from "./prisma-mappers.js";
 
 export type PrismaLikeClient = Pick<
   PrismaClient,
-  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord" | "clarificationInterviewSessionRecord"
+  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord" | "clarificationInterviewSessionRecord" | "searchRefinementSuggestionRecord"
 >;
+
+export class PrismaSearchRefinementSuggestionRepository implements SearchRefinementSuggestionRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async save(suggestion: SearchRefinementSuggestion): Promise<SearchRefinementSuggestion> {
+    const record = await this.prisma.searchRefinementSuggestionRecord.create({
+      data: toSearchRefinementSuggestionCreateInput(suggestion),
+    });
+    return toSearchRefinementSuggestionDomain(record as SearchRefinementSuggestionPersistenceRecord);
+  }
+
+  async findBySearchRunId(searchRunId: string): Promise<SearchRefinementSuggestion[]> {
+    const records = await this.prisma.searchRefinementSuggestionRecord.findMany({
+      where: { searchRunId },
+      orderBy: { createdAt: "desc" },
+    });
+    return records.map((record) =>
+      toSearchRefinementSuggestionDomain(record as SearchRefinementSuggestionPersistenceRecord),
+    );
+  }
+
+  async findByJobProfileId(jobProfileId: string): Promise<SearchRefinementSuggestion[]> {
+    const records = await this.prisma.searchRefinementSuggestionRecord.findMany({
+      where: { jobProfileId },
+      orderBy: { createdAt: "desc" },
+    });
+    return records.map((record) =>
+      toSearchRefinementSuggestionDomain(record as SearchRefinementSuggestionPersistenceRecord),
+    );
+  }
+}
 
 export class PrismaClarificationInterviewSessionRepository implements ClarificationInterviewSessionRepository {
   constructor(private readonly prisma: PrismaLikeClient) {}

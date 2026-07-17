@@ -104,6 +104,7 @@ model SearchRunRecord {
   aiAssessmentAudits AIAssessmentAuditRecord[]
   pluginCandidateBatches PluginCandidateBatchRecord[]
   candidateAssessments CandidateAssessmentRecord[]
+  refinementSuggestions SearchRefinementSuggestionRecord[]
   createdAt          DateTime
   updatedAt          DateTime
   jobProfile         JobProfileRecord        @relation(fields: [jobProfileId], references: [id])
@@ -243,6 +244,27 @@ model HardConditionOptionRecord {
 
   @@index([dimensionKey])
   @@unique([dimensionKey, value])
+}
+
+model SearchRefinementSuggestionRecord {
+  id                       String   @id
+  searchRunId              String
+  jobProfileId             String
+  jobProfileVersionId      String
+  suggestedSearchCondition Json
+  addedKeywords            Json
+  droppedKeywords          Json
+  reasoning                String
+  analysisSnapshot         Json
+  provider                 String
+  model                    String
+  promptVersion            String
+  agentVersion             String
+  createdAt                DateTime
+  searchRun                SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([searchRunId])
+  @@index([jobProfileId])
 }
 
 model ClarificationInterviewSessionRecord {

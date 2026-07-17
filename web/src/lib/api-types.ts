@@ -398,6 +398,35 @@ export interface ClarificationInterviewListResponse {
   sessions: ClarificationInterviewSession[];
 }
 
+// ─── 搜索词迭代（/api/search-runs/:id/refinement-suggestions） ──────────
+
+export interface SearchRefinementSuggestion {
+  id: Identifier;
+  searchRunId: Identifier;
+  jobProfileId: Identifier;
+  jobProfileVersionId: Identifier;
+  suggestedSearchCondition: SearchCondition;
+  addedKeywords: string[];
+  droppedKeywords: string[];
+  reasoning: string;
+  analysisSnapshot: {
+    recommendedCount: number;
+    eliminatedCount: number;
+    recommendedTraits: string[];
+    eliminatedTraits: string[];
+  };
+  provider: string;
+  model: string;
+  promptVersion: string;
+  agentVersion: string;
+  createdAt: string;
+}
+
+export interface SearchRefinementSuggestionsResponse {
+  searchRunId: Identifier;
+  suggestions: SearchRefinementSuggestion[];
+}
+
 // ─── 寻访报告（GET /api/search-runs/:id/report、GET /api/job-profiles/:id/report） ──
 
 export interface FunnelCounts {

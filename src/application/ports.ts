@@ -22,6 +22,10 @@ import type {
   InterviewQuestionDraft,
   InterviewTopic,
 } from "../domain/clarification-interview-contract.js";
+import type {
+  SearchRefinementDraft,
+  SearchRefinementSuggestion,
+} from "../domain/search-refinement-contract.js";
 
 export interface SourceAdapter {
   acquireCandidates(jobProfile: JobProfile, searchRun: SearchRun): Promise<{
@@ -158,4 +162,22 @@ export interface ClarificationInterviewSessionRepository {
   save(session: ClarificationInterviewSession): Promise<ClarificationInterviewSession>;
   findById(id: string): Promise<ClarificationInterviewSession | undefined>;
   findByJobProfileId(jobProfileId: string): Promise<ClarificationInterviewSession[]>;
+}
+
+export interface SearchRefinementPort {
+  readonly providerName?: string;
+  readonly modelName?: string;
+  readonly graphVersion?: string;
+
+  suggestRefinement(input: {
+    jobProfile: JobProfile;
+    recommended: CandidateResult[];
+    eliminated: CandidateResult[];
+  }): Promise<SearchRefinementDraft>;
+}
+
+export interface SearchRefinementSuggestionRepository {
+  save(suggestion: SearchRefinementSuggestion): Promise<SearchRefinementSuggestion>;
+  findBySearchRunId(searchRunId: string): Promise<SearchRefinementSuggestion[]>;
+  findByJobProfileId(jobProfileId: string): Promise<SearchRefinementSuggestion[]>;
 }
