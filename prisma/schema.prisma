@@ -57,6 +57,7 @@ model JobProfileRecord {
   searchCondition   Json
   hardRequirements  Json
   softRequirements  Json
+  negativeSignals   Json             @default("[]")
   confirmedAt       DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -75,6 +76,7 @@ model JobProfileVersionRecord {
   searchCondition   Json
   hardRequirements  Json
   softRequirements  Json
+  negativeSignals   Json               @default("[]")
   status            String
   createdAt         DateTime
   confirmedAt       DateTime?

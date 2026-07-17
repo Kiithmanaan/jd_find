@@ -201,11 +201,13 @@ test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
       searchCondition: jobProfile.searchCondition,
       hardRequirements: jobProfile.hardRequirements,
       softRequirements: jobProfile.softRequirements,
+      negativeSignals: ["频繁跳槽"],
     },
   });
   assert.equal(draft.statusCode, 201);
   assert.equal(draft.json().id, "job-1-v2");
   assert.equal(draft.json().status, "Draft");
+  assert.deepEqual(draft.json().negativeSignals, ["频繁跳槽"]);
 
   const confirm = await app.inject({
     method: "POST",
@@ -214,6 +216,7 @@ test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().jobProfile.currentVersionId, "job-1-v2");
   assert.equal(confirm.json().version.status, "Confirmed");
+  assert.deepEqual(confirm.json().jobProfile.negativeSignals, ["频繁跳槽"]);
 
   const versions = await app.inject({
     method: "GET",

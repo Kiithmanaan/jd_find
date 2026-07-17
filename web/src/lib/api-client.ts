@@ -21,7 +21,11 @@ let webToken = localStorage.getItem("jd-search-token") ?? "";
 async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: { "content-type": "application/json", ...(webToken ? { authorization: `Bearer ${webToken}` } : {}), ...init.headers },
+    headers: {
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...(webToken ? { authorization: `Bearer ${webToken}` } : {}),
+      ...init.headers,
+    },
   });
   if (response.status === 401) { webToken = ""; localStorage.removeItem("jd-search-token"); }
   const body = await response.json() as T & { message?: string; error?: string };
@@ -37,11 +41,12 @@ export const realApi = {
   hasToken: (): boolean => Boolean(webToken),
   logout: (): void => { webToken = ""; localStorage.removeItem("jd-search-token"); },
   versions: (profileId: string) => apiRequest<JobProfileVersionsResponse>(`/api/job-profiles/${profileId}/versions`),
-  createDraft: (profileId: string, source: ApiJobProfileVersion) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, {
+  createDraft: (profileId: string, source: ApiJobProfileVersion, negativeSignals?: string[]) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, {
     method: "POST",
     body: JSON.stringify({
       title: source.title, jdText: source.jdText, searchCondition: source.searchCondition,
       hardRequirements: source.hardRequirements, softRequirements: source.softRequirements,
+      negativeSignals: negativeSignals ?? source.negativeSignals,
     } satisfies JobProfileVersionDraftRequest),
   }),
   confirmVersion: (profileId: string, versionId: string) => apiRequest<unknown>(`/api/job-profiles/${profileId}/versions/${versionId}/confirm`, { method: "POST" }),
@@ -49,6 +54,7 @@ export const realApi = {
     method: "POST", body: JSON.stringify({ sourceType: "plugin", targetResultCount, jobProfile: {
       id: version.jobProfileId, title: version.title, jdText: version.jdText, status: "Confirmed", currentVersionId: version.id,
       searchCondition: version.searchCondition, hardRequirements: version.hardRequirements, softRequirements: version.softRequirements,
+      negativeSignals: version.negativeSignals,
     } }),
   }),
   run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),

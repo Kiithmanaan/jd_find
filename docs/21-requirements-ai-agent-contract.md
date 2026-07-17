@@ -119,6 +119,8 @@
 
 - `JobProfileVersion`。
 - 软性匹配 prompt。
+- 排除信号：画像中命中即提示风险的简历特征描述（`negativeSignals`，可为空）。
+- 软性条件的验证方式提示（`SoftRequirement.verificationHint`，可选）：说明看简历中什么信号才算真正满足该条件。
 - 硬筛通过候选人。
 - 候选人简历摘要、来源线索、意向、活跃度。
 
@@ -150,8 +152,8 @@
   "trace": "string",
   "assessedAt": "2026-06-06T00:00:00.000Z",
   "jobProfileVersionId": "string",
-  "promptVersion": "match-assessment-v1",
-  "agentVersion": "jd-match-assessment-v1"
+  "promptVersion": "match-assessment-v2",
+  "agentVersion": "jd-match-assessment-v2"
 }
 ```
 
@@ -162,6 +164,20 @@
 - `matchedPoints`、`unmatchedPoints`、`riskPoints` 每类最多 3 条。
 - `trace` 必须能关联岗位画像、软性 prompt 和候选人证据。
 - 硬筛淘汰候选人不得进入匹配 Agent。
+
+排除信号对照规则：
+
+- 画像配置了 `negativeSignals` 时，匹配 Agent 必须逐条对照候选人简历。
+- 命中的排除信号优先写入 `riskPoints`，每条注明命中的信号。
+- `riskPoints` 上限仍为 3 条：命中信号超过 3 条时按严重程度截断，截断是预期口径。
+- 排除信号命中不强制改变推荐结论，但必须在 `recommendationReason` 或 `trace` 中说明影响。
+
+prompt version 迁移说明：
+
+- `match-assessment-v1`：不含排除信号与验证方式提示的初版契约。
+- `match-assessment-v2`：输入增加 `negativeSignals` 与 `verificationHint`，输出要求风险点逐条对照排除信号。
+- 历史审计记录保留 v1 标识，与 v2 记录并存，属预期行为，用于区分两代评估口径。
+- HTTP AI Adapter 的外部服务需同步接受请求体中新增的 `negativeSignals` 与 `softRequirements[].verificationHint` 字段。
 
 ## 7. 关键信息检查
 

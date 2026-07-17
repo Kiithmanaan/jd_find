@@ -53,6 +53,8 @@ export interface SoftRequirement {
   label: string;
   weight: number;
   description: string;
+  /** 验证方式提示：看简历中什么信号才算真正满足该条件。 */
+  verificationHint?: string;
 }
 
 export interface JobProfile {
@@ -65,6 +67,8 @@ export interface JobProfile {
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  /** 排除信号：命中即提示风险的简历特征描述，空数组表示未配置。 */
+  negativeSignals: string[];
   confirmedAt?: string;
 }
 
@@ -77,6 +81,7 @@ export interface JobProfileVersion {
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  negativeSignals: string[];
   status: "Draft" | "Confirmed";
   createdAt: string;
   confirmedAt?: string;
@@ -303,6 +308,7 @@ export interface JobProfileVersionDraftRequest {
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  negativeSignals?: string[];
 }
 
 export interface CreateOneTimeSearchRunRequest {

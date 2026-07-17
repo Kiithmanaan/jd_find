@@ -101,7 +101,24 @@ export function ProfileDetailPanel(props: ProfileDetailPanelProps): React.ReactE
           {p.softRequirements.length > 0 ? (
             <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
               {p.softRequirements.map((req) => (
-                <li key={req.key}>{req.label}：{req.description}</li>
+                <li key={req.key}>
+                  {req.label}：{req.description}
+                  {req.verificationHint ? <span className="text-[10px]">（验证方式：{req.verificationHint}）</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-xs text-muted-foreground">未设置</p>}
+        </CardContent>
+      </Card>
+
+      {/* 排除信号 */}
+      <Card>
+        <CardContent className="pt-4 space-y-2">
+          <h3 className="text-sm font-semibold">排除信号</h3>
+          {p.negativeSignals.length > 0 ? (
+            <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+              {p.negativeSignals.map((signal) => (
+                <li key={signal}>{signal}</li>
               ))}
             </ul>
           ) : <p className="text-xs text-muted-foreground">未设置</p>}

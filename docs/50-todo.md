@@ -24,7 +24,16 @@
 - 补充 AI 输出质量样例集。
 - 在生产环境信息明确后，补齐部署手册中的待填写项。
 
-## 4. 近期实现风险
+## 4. 参考方法论增强（四阶段，进行中）
+
+参考 recruiting-copilot 猎头方法论确定的四项增强，按改动成本从小到大依次实施，每阶段独立分支交付：
+
+- **阶段A（已完成）排除信号进评估契约**：画像增加 `negativeSignals` 与软性条件 `verificationHint`，注入匹配 prompt，风险点逐条对照，prompt version 升级 v2。已完成浏览器端到端验证；migration `20260716090000_negative_signals` 尚未在真实 PostgreSQL 上应用（本地 Docker 不可用），部署时 `prisma migrate deploy` 复核。过程中发现并修复工作台既有 bug：`apiRequest` 对无 body 的 POST（确认版本/取消/重评估）强制携带 `content-type: application/json`，导致真实 API 返回 `FST_ERR_CTP_EMPTY_JSON_BODY` 500；同时把草稿创建/版本确认的错误接入工作台错误提示条。
+- **阶段B（待办）寻访报告**：SearchRun 级与 JobProfile 级只读漏斗报告端点 + 工作台面板。
+- **阶段C（待办）澄清访谈 Agent**：七组话题逼问式画像梳理，会话持久化，产出画像草稿字段，工作台简易问答面板。
+- **阶段D（待办）搜索词迭代闭环**：SearchRun 完成后手动触发推荐组 vs 淘汰组分析，产出搜索条件建议并支持前端应用到草稿版本。
+
+## 5. 近期实现风险
 
 - 插件提交限流：候选人提交和附件上传仍需按 Plugin Token + SearchRun 增加保护型限流，并返回 `RateLimited`。
 - 生产错误可观测性缺失：API 的 `Fastify({ logger: false })` 加上兜底 `setErrorHandler` 只返回 `{error:"InternalServerError"}`，不打印任何日志——这次集成验证排查 BullMQ 报错时，如果不临时加 `console.error` 根本看不到真实异常。需要补至少一行服务端错误日志（stdout 或接入日志系统），否则生产环境出问题基本没法排查。
@@ -45,12 +54,12 @@
 
 不做（产品决策）：Web 端手动添加候选人——真实候选人提交只走插件 Plugin Token 通道，Web 用户没有对应权限边界，决定不新增该端点，已删除对应的 `AddCandidateDialog` 组件。
 
-## 5. MVP 后复核风险
+## 6. MVP 后复核风险
 
 - 候选人数据合规风险：MVP 版本暂不考虑，正式上线前再复核。
 - Web 权限模型风险：MVP 版本暂不考虑，正式多人使用前再复核。
 
-## 6. 已完成的文档产物
+## 7. 已完成的文档产物
 
 - `docs/README.md`
 - `docs/00-requirements-baseline.md`

@@ -58,6 +58,7 @@ export function createConfirmedJobProfileVersion(jobProfile: JobProfile): JobPro
     searchCondition: jobProfile.searchCondition,
     hardRequirements: jobProfile.hardRequirements,
     softRequirements: jobProfile.softRequirements,
+    negativeSignals: jobProfile.negativeSignals,
     status: "Confirmed",
     createdAt: jobProfile.confirmedAt ?? new Date(),
     confirmedAt: jobProfile.confirmedAt ?? new Date(),
@@ -82,6 +83,7 @@ export function createDraftJobProfileVersion(
     searchCondition: jobProfile.searchCondition,
     hardRequirements: jobProfile.hardRequirements,
     softRequirements: jobProfile.softRequirements,
+    negativeSignals: jobProfile.negativeSignals,
     status: "Draft",
     createdAt: new Date(),
   };
@@ -106,6 +108,7 @@ export function confirmJobProfileVersion(
       searchCondition: version.searchCondition,
       hardRequirements: version.hardRequirements,
       softRequirements: version.softRequirements,
+      negativeSignals: version.negativeSignals,
       confirmedAt,
     },
     version: {

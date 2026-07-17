@@ -2,8 +2,8 @@ import { DomainError } from "./errors.js";
 import type { JobProfile } from "./types.js";
 import type { CandidateResult, MatchAssessment } from "./types.js";
 
-export const MATCH_ASSESSMENT_PROMPT_VERSION = "match-assessment-v1";
-export const MATCH_ASSESSMENT_AGENT_VERSION = "jd-match-assessment-v1";
+export const MATCH_ASSESSMENT_PROMPT_VERSION = "match-assessment-v2";
+export const MATCH_ASSESSMENT_AGENT_VERSION = "jd-match-assessment-v2";
 
 const RECOMMENDATIONS: MatchAssessment["recommendation"][] = ["推荐", "待定", "不推荐"];
 
@@ -84,6 +84,7 @@ export function createMatchAssessmentPrompt(jobProfile: JobProfile, candidateIds
       title: jobProfile.title,
       hardRequirements: jobProfile.hardRequirements,
       softRequirements: jobProfile.softRequirements,
+      negativeSignals: jobProfile.negativeSignals,
     },
     candidateIds,
   });

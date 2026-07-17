@@ -36,6 +36,7 @@ export interface LangGraphJobProfileSnapshot {
   searchCondition: JobProfile["searchCondition"];
   hardRequirements: JobProfile["hardRequirements"];
   softRequirements: JobProfile["softRequirements"];
+  negativeSignals: JobProfile["negativeSignals"];
 }
 
 export interface LangGraphCandidateSnapshot {
@@ -222,7 +223,10 @@ function createLangGraphAssessmentPrompt(
     promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
     graphVersion: MATCH_ASSESSMENT_GRAPH_VERSION,
     instruction:
-      "请基于岗位画像和候选人摘要输出结构化匹配评估。必须覆盖每一个 candidateId，不得返回请求范围外的候选人。",
+      "请基于岗位画像和候选人摘要输出结构化匹配评估。必须覆盖每一个 candidateId，不得返回请求范围外的候选人。" +
+      "jobProfile.negativeSignals 是排除信号：必须逐条对照候选人简历，命中的排除信号优先写入 riskPoints 并注明命中的信号；" +
+      "命中超过 3 条时按严重程度截断。排除信号命中不强制改变推荐结论，但必须在 recommendationReason 或 trace 中说明影响。" +
+      "softRequirements 中带 verificationHint 的条件，只有简历中出现该提示描述的信号才算满足，不凭感觉判断。",
     jobProfile,
     candidates,
     outputContract: {
@@ -231,7 +235,7 @@ function createLangGraphAssessmentPrompt(
       recommendationReason: "一句清晰原因",
       matchedPoints: "最多 3 条匹配点",
       unmatchedPoints: "最多 3 条不匹配点",
-      riskPoints: "最多 3 条风险点",
+      riskPoints: "最多 3 条风险点，命中的排除信号优先写入并注明",
       trace: "简要说明评分依据和证据来源",
     },
   });
@@ -291,6 +295,7 @@ function toJobProfileSnapshot(jobProfile: JobProfile): LangGraphJobProfileSnapsh
     searchCondition: jobProfile.searchCondition,
     hardRequirements: jobProfile.hardRequirements,
     softRequirements: jobProfile.softRequirements,
+    negativeSignals: jobProfile.negativeSignals,
   };
 }
 

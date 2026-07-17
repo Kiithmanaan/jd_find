@@ -215,6 +215,7 @@ export class PluginCandidateService {
           searchCondition: jobProfile.searchCondition,
           hardRequirements: jobProfile.hardRequirements,
           softRequirements: jobProfile.softRequirements,
+          negativeSignals: jobProfile.negativeSignals,
         },
         candidates: candidates.map((candidate) => ({
           id: candidate.id,

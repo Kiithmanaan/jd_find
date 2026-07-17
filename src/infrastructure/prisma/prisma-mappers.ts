@@ -26,6 +26,7 @@ export type JobProfilePersistenceRecord = {
   searchCondition: Prisma.JsonValue;
   hardRequirements: Prisma.JsonValue;
   softRequirements: Prisma.JsonValue;
+  negativeSignals: Prisma.JsonValue;
   confirmedAt: Date | null;
 };
 
@@ -38,6 +39,7 @@ export type JobProfileVersionPersistenceRecord = {
   searchCondition: Prisma.JsonValue;
   hardRequirements: Prisma.JsonValue;
   softRequirements: Prisma.JsonValue;
+  negativeSignals: Prisma.JsonValue;
   status: JobProfileVersion["status"];
   createdAt: Date;
   confirmedAt: Date | null;
@@ -122,6 +124,7 @@ export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfi
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
+    negativeSignals: toJsonInput(jobProfile.negativeSignals),
     confirmedAt: jobProfile.confirmedAt ?? null,
   };
 }
@@ -136,6 +139,7 @@ export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfi
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
+    negativeSignals: toJsonInput(jobProfile.negativeSignals),
     confirmedAt: jobProfile.confirmedAt ?? null,
   };
 }
@@ -151,6 +155,7 @@ export function toJobProfileDomain(record: JobProfilePersistenceRecord): JobProf
     searchCondition: record.searchCondition as unknown as JobProfile["searchCondition"],
     hardRequirements: record.hardRequirements as unknown as JobProfile["hardRequirements"],
     softRequirements: record.softRequirements as unknown as JobProfile["softRequirements"],
+    negativeSignals: reviveNegativeSignals(record.negativeSignals),
     confirmedAt: record.confirmedAt ?? undefined,
   };
 }
@@ -171,6 +176,7 @@ export function toJobProfileVersionCreateInput(
     searchCondition: toJsonInput(version.searchCondition),
     hardRequirements: toJsonInput(version.hardRequirements),
     softRequirements: toJsonInput(version.softRequirements),
+    negativeSignals: toJsonInput(version.negativeSignals),
     status: version.status,
     createdAt: version.createdAt,
     confirmedAt: version.confirmedAt ?? null,
@@ -187,6 +193,7 @@ export function toJobProfileVersionUpdateInput(
     searchCondition: toJsonInput(version.searchCondition),
     hardRequirements: toJsonInput(version.hardRequirements),
     softRequirements: toJsonInput(version.softRequirements),
+    negativeSignals: toJsonInput(version.negativeSignals),
     status: version.status,
     createdAt: version.createdAt,
     confirmedAt: version.confirmedAt ?? null,
@@ -203,10 +210,15 @@ export function toJobProfileVersionDomain(record: JobProfileVersionPersistenceRe
     searchCondition: record.searchCondition as unknown as JobProfileVersion["searchCondition"],
     hardRequirements: record.hardRequirements as unknown as JobProfileVersion["hardRequirements"],
     softRequirements: record.softRequirements as unknown as JobProfileVersion["softRequirements"],
+    negativeSignals: reviveNegativeSignals(record.negativeSignals),
     status: record.status,
     createdAt: record.createdAt,
     confirmedAt: record.confirmedAt ?? undefined,
   };
+}
+
+function reviveNegativeSignals(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? (value as string[]) : [];
 }
 
 export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun {

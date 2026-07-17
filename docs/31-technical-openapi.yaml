@@ -564,6 +564,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号：命中即提示风险的简历特征描述，供匹配评估风险点逐条对照。
+          items:
+            type: string
         confirmedAt:
           type: string
           format: date-time
@@ -591,6 +596,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号：命中即提示风险的简历特征描述。
+          items:
+            type: string
         status:
           type: string
           enum: [Draft, Confirmed]
@@ -618,6 +628,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号，可省略，默认空数组。
+          items:
+            type: string
     CandidateDraft:
       type: object
       required: [fingerprint, resume, intent, activityLevel, sourceLead]
