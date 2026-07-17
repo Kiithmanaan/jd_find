@@ -42,6 +42,7 @@ import {
 import { BatchConflictError, ReassessmentInProgressError } from "../domain/errors.js";
 import { LocalAttachmentStorage } from "../infrastructure/local/local-attachment-storage.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
+import { summarizeJobProfileReport, summarizeSearchRunReport } from "../domain/search-report.js";
 import { InMemorySearchRunQueue } from "../infrastructure/memory/in-memory-search-run-queue.js";
 import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
 import {
@@ -582,6 +583,62 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     } finally {
       await reassessmentLocks.release(jobProfile.id, jobProfile.currentVersionId);
     }
+  });
+
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id/report", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+
+    const report = summarizeSearchRunReport(searchRun);
+    return reply.code(200).send({
+      ...report,
+      topCandidates: report.topCandidates.map(toCandidateResponse),
+      pendingCandidates: report.pendingCandidates.map(toCandidateResponse),
+    });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/job-profiles/:id/report", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const currentVersion = jobProfile.currentVersionId
+      ? await jobProfileVersions.findById(jobProfile.currentVersionId)
+      : await jobProfileVersions.findLatestConfirmedByJobProfileId(jobProfile.id);
+    if (!currentVersion) {
+      return reply.code(422).send({ error: "JobProfileVersionMissing", message: "Confirmed version was not found." });
+    }
+
+    const runs = await searchRuns.findByJobProfileId(jobProfile.id);
+    const accessibleRuns = runs.filter((searchRun) => canAccessSearchRun(searchRun, currentUser));
+    const report = summarizeJobProfileReport(
+      accessibleRuns,
+      currentVersion.id,
+      await candidateAssessments.findLatestByJobProfileVersion(jobProfile.id, currentVersion.id),
+    );
+    return reply.code(200).send({
+      ...report,
+      jobProfileId: jobProfile.id,
+    });
   });
 
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {

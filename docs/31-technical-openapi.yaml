@@ -195,6 +195,105 @@ paths:
           $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
+  /search-runs/{id}/report:
+    get:
+      summary: 查询单次 SearchRun 的寻访报告（当轮快照口径，重评估不回写）
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 寻访报告：漏斗数字、Top 候选人、待定清单
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, jobProfileId, jobProfileVersionId, status, funnel, topCandidates, pendingCandidates]
+                properties:
+                  searchRunId:
+                    type: string
+                  jobProfileId:
+                    type: string
+                  jobProfileVersionId:
+                    type: string
+                  status:
+                    type: string
+                  funnel:
+                    $ref: "#/components/schemas/FunnelCounts"
+                  topCandidates:
+                    type: array
+                    description: 推荐候选人按匹配分降序前 5，不足时补高分待定候选人。
+                    items:
+                      $ref: "#/components/schemas/CandidateResult"
+                  pendingCandidates:
+                    type: array
+                    description: 全部推荐结论为待定的候选人，按匹配分降序。
+                    items:
+                      $ref: "#/components/schemas/CandidateResult"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+  /job-profiles/{id}/report:
+    get:
+      summary: 查询 JobProfile 级汇总报告（跨 SearchRun 累计漏斗 + 去重后最新评估分布）
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 汇总报告。累计漏斗为各 run 当轮快照相加；推荐结论分布为跨 run 按 fingerprint 去重后叠加最新评估（含重评估覆盖），两者口径不同。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, currentVersionId, totalSearchRuns, cumulativeFunnel, uniqueCandidateCount, currentRecommendationDistribution, runs]
+                properties:
+                  jobProfileId:
+                    type: string
+                  currentVersionId:
+                    type: string
+                  totalSearchRuns:
+                    type: integer
+                  cumulativeFunnel:
+                    $ref: "#/components/schemas/FunnelCounts"
+                  uniqueCandidateCount:
+                    type: integer
+                  currentRecommendationDistribution:
+                    type: object
+                    required: [recommended, pending, notRecommended, unassessed]
+                    properties:
+                      recommended:
+                        type: integer
+                      pending:
+                        type: integer
+                      notRecommended:
+                        type: integer
+                      unassessed:
+                        type: integer
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      required: [searchRunId, status, createdAt, funnel]
+                      properties:
+                        searchRunId:
+                          type: string
+                        status:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+                        funnel:
+                          $ref: "#/components/schemas/FunnelCounts"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+        "422":
+          $ref: "#/components/responses/DomainError"
   /job-profiles/{id}/versions:
     get:
       summary: 查询 JobProfile 版本历史
@@ -537,6 +636,27 @@ components:
                 type: string
               message:
                 type: string
+    FunnelCounts:
+      type: object
+      description: 寻访漏斗计数：原始提交→去重→硬筛→评估→推荐结论分布。
+      required: [rawSubmitted, deduplicated, hardPassed, hardRejected, assessed, recommended, pending, notRecommended]
+      properties:
+        rawSubmitted:
+          type: integer
+        deduplicated:
+          type: integer
+        hardPassed:
+          type: integer
+        hardRejected:
+          type: integer
+        assessed:
+          type: integer
+        recommended:
+          type: integer
+        pending:
+          type: integer
+        notRecommended:
+          type: integer
     JobProfile:
       type: object
       required: [id, title, jdText, status, searchCondition, hardRequirements, softRequirements]

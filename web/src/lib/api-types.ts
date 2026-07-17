@@ -335,3 +335,50 @@ export interface AIAssessmentAuditsResponse {
 export interface ReassessCandidatesResponse {
   reassessedCount: number;
 }
+
+// ─── 寻访报告（GET /api/search-runs/:id/report、GET /api/job-profiles/:id/report） ──
+
+export interface FunnelCounts {
+  rawSubmitted: number;
+  deduplicated: number;
+  hardPassed: number;
+  hardRejected: number;
+  assessed: number;
+  recommended: number;
+  pending: number;
+  notRecommended: number;
+}
+
+export interface SearchRunReportResponse {
+  searchRunId: Identifier;
+  jobProfileId: Identifier;
+  jobProfileVersionId: Identifier;
+  status: SearchRunStatus;
+  funnel: FunnelCounts;
+  /** 推荐候选人按匹配分降序前 5，不足补高分待定。 */
+  topCandidates: CandidateResult[];
+  /** 全部推荐结论为待定的候选人，按匹配分降序。 */
+  pendingCandidates: CandidateResult[];
+}
+
+export interface JobProfileReportResponse {
+  jobProfileId: Identifier;
+  currentVersionId: Identifier;
+  totalSearchRuns: number;
+  /** 各 run 当轮快照相加，不做跨 run 去重。 */
+  cumulativeFunnel: FunnelCounts;
+  uniqueCandidateCount: number;
+  /** 跨 run 去重后按最新评估（含重评估覆盖）的分布，与累计漏斗口径不同。 */
+  currentRecommendationDistribution: {
+    recommended: number;
+    pending: number;
+    notRecommended: number;
+    unassessed: number;
+  };
+  runs: Array<{
+    searchRunId: Identifier;
+    status: SearchRunStatus;
+    createdAt: string;
+    funnel: FunnelCounts;
+  }>;
+}

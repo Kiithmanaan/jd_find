@@ -171,6 +171,82 @@ test("API 查询不存在 SearchRun 的 AI 评估审计返回 404", async () => 
   assert.equal(response.json().error, "SearchRunNotFound");
 });
 
+test("API 返回 SearchRun 级与 JobProfile 级寻访报告", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const searchRunQueue = new InMemorySearchRunQueue();
+  const app = createApp({ idGenerator: () => "api-run-report", searchRuns, searchRunQueue });
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      targetResultCount: 10,
+      candidates: createCandidateDrafts(),
+    },
+  });
+  const queuedJob = searchRunQueue.findJobById(response.json().jobId);
+  assert.ok(queuedJob);
+
+  const handler = new SearchRunJobHandler({
+    aiAssessment: new MockAIAssessment(),
+    searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
+  });
+  await handler.handleOneTimeSearch(queuedJob);
+
+  const runReport = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-report/report",
+  });
+  assert.equal(runReport.statusCode, 200);
+  const runBody = runReport.json();
+  assert.equal(runBody.searchRunId, "api-run-report");
+  assert.equal(runBody.status, "Completed");
+  assert.equal(runBody.funnel.rawSubmitted, 4);
+  assert.equal(runBody.funnel.deduplicated, 3);
+  assert.equal(runBody.funnel.hardPassed, 2);
+  assert.equal(runBody.funnel.hardRejected, 1);
+  assert.equal(runBody.funnel.assessed, 2);
+  assert.equal(runBody.funnel.recommended, 1);
+  assert.equal(runBody.funnel.pending, 1);
+  assert.equal(runBody.topCandidates.length, 2);
+  assert.equal(runBody.topCandidates[0].matchAssessment.recommendation, "推荐");
+  assert.equal(runBody.pendingCandidates.length, 1);
+  assert.equal(runBody.pendingCandidates[0].matchAssessment.recommendation, "待定");
+
+  const profileReport = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/report",
+  });
+  assert.equal(profileReport.statusCode, 200);
+  const profileBody = profileReport.json();
+  assert.equal(profileBody.jobProfileId, "job-1");
+  assert.equal(profileBody.currentVersionId, "job-1-v1");
+  assert.equal(profileBody.totalSearchRuns, 1);
+  assert.equal(profileBody.cumulativeFunnel.rawSubmitted, 4);
+  assert.equal(profileBody.uniqueCandidateCount, 3);
+  assert.deepEqual(profileBody.currentRecommendationDistribution, {
+    recommended: 1,
+    pending: 1,
+    notRecommended: 0,
+    unassessed: 1,
+  });
+  assert.equal(profileBody.runs.length, 1);
+  assert.equal(profileBody.runs[0].searchRunId, "api-run-report");
+});
+
+test("API 查询不存在资源的寻访报告返回 404", async () => {
+  const app = createApp();
+
+  const runReport = await app.inject({ method: "GET", url: "/api/search-runs/missing-run/report" });
+  assert.equal(runReport.statusCode, 404);
+  assert.equal(runReport.json().error, "SearchRunNotFound");
+
+  const profileReport = await app.inject({ method: "GET", url: "/api/job-profiles/missing-profile/report" });
+  assert.equal(profileReport.statusCode, 404);
+  assert.equal(profileReport.json().error, "JobProfileNotFound");
+});
+
 test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
   const jobProfiles = new InMemoryJobProfileRepository();
   const jobProfileVersions = new InMemoryJobProfileVersionRepository();
@@ -1041,6 +1117,20 @@ test("Web 用户不能访问其他用户的 JobProfile 版本和汇总", async (
     },
   });
   assert.equal(draft.statusCode, 403);
+
+  const profileReport = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/report",
+    headers: otherHeaders,
+  });
+  assert.equal(profileReport.statusCode, 403);
+
+  const runReport = await app.inject({
+    method: "GET",
+    url: `/api/search-runs/${createRun.json().searchRunId}/report`,
+    headers: otherHeaders,
+  });
+  assert.equal(runReport.statusCode, 403);
 });
 
 test("API 查询不存在的 SearchRun 返回 404", async () => {

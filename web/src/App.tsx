@@ -6,6 +6,8 @@ import { HardConditionConfigPanel } from "./components/shared/HardConditionConfi
 import { CreateSearchRunDialog } from "./components/shared/CreateSearchRunDialog.js";
 import { SearchRunListPanel, type SearchRunListItem } from "./components/shared/SearchRunListPanel.js";
 import { ProfileDetailPanel } from "./components/shared/ProfileDetailPanel.js";
+import { SearchRunReportPanel } from "./components/shared/SearchRunReportPanel.js";
+import { JobProfileReportPanel } from "./components/shared/JobProfileReportPanel.js";
 import type { JobProfile } from "./lib/api-types.js";
 
 const columns: ColumnDef<ApiCandidate>[] = [
@@ -26,6 +28,8 @@ export function App(): React.JSX.Element {
   const [showHardConditionConfig, setShowHardConditionConfig] = useState(false);
   const [showSearchRunList, setShowSearchRunList] = useState(false);
   const [showProfileDetail, setShowProfileDetail] = useState(false);
+  const [showRunReport, setShowRunReport] = useState(false);
+  const [showProfileReport, setShowProfileReport] = useState(false);
   const [createRunDialogOpen, setCreateRunDialogOpen] = useState(false);
   const [draftSignalsText, setDraftSignalsText] = useState("");
   const hardConditionConfig = useQuery({
@@ -38,6 +42,8 @@ export function App(): React.JSX.Element {
   const run = useQuery({ queryKey: ["run", runId], queryFn: () => realApi.run(runId), enabled: authenticated && Boolean(runId), refetchInterval: (q) => ["Completed", "Failed", "Cancelled", "Interrupted"].includes(q.state.data?.status ?? "") ? false : 3000 });
   const candidates = useQuery({ queryKey: ["candidates", profileId], queryFn: () => realApi.candidates(profileId), enabled: authenticated && Boolean(profileId) });
   const audits = useQuery({ queryKey: ["audits", runId], queryFn: () => realApi.audits(runId), enabled: authenticated && Boolean(runId) });
+  const runReport = useQuery({ queryKey: ["run-report", runId], queryFn: () => realApi.runReport(runId), enabled: authenticated && Boolean(runId) && showRunReport });
+  const profileReport = useQuery({ queryKey: ["profile-report", profileId], queryFn: () => realApi.profileReport(profileId), enabled: authenticated && Boolean(profileId) && showProfileReport });
   const confirmedVersion = versions.data?.versions.find((item) => item.id === versions.data?.currentVersionId && item.status === "Confirmed");
   /** 目前没有单独的 GET JobProfile 端点，画像内容借当前确认版本合成展示用；与 createRun 请求体的合成方式保持一致。 */
   const syntheticProfile: JobProfile | undefined = confirmedVersion && {
@@ -103,6 +109,30 @@ export function App(): React.JSX.Element {
           searchRuns={searchRunListItems}
           onSelectRun={setRunId}
           onNavigateToProfiles={() => setRunId("")}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!runId} onClick={() => setShowRunReport((v) => !v)}>
+        {showRunReport ? "隐藏寻访报告" : "查看寻访报告"}
+      </button>
+      {showRunReport && <div className="mt-3 rounded border p-4">
+        <SearchRunReportPanel
+          report={runReport.data}
+          loading={runReport.isLoading}
+          error={runReport.error?.message}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!profileId} onClick={() => setShowProfileReport((v) => !v)}>
+        {showProfileReport ? "隐藏画像汇总报告" : "查看画像汇总报告"}
+      </button>
+      {showProfileReport && <div className="mt-3 rounded border p-4">
+        <JobProfileReportPanel
+          report={profileReport.data}
+          loading={profileReport.isLoading}
+          error={profileReport.error?.message}
         />
       </div>}
     </section>

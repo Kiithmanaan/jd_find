@@ -29,7 +29,7 @@
 参考 recruiting-copilot 猎头方法论确定的四项增强，按改动成本从小到大依次实施，每阶段独立分支交付：
 
 - **阶段A（已完成）排除信号进评估契约**：画像增加 `negativeSignals` 与软性条件 `verificationHint`，注入匹配 prompt，风险点逐条对照，prompt version 升级 v2。已完成浏览器端到端验证；migration `20260716090000_negative_signals` 尚未在真实 PostgreSQL 上应用（本地 Docker 不可用），部署时 `prisma migrate deploy` 复核。过程中发现并修复工作台既有 bug：`apiRequest` 对无 body 的 POST（确认版本/取消/重评估）强制携带 `content-type: application/json`，导致真实 API 返回 `FST_ERR_CTP_EMPTY_JSON_BODY` 500；同时把草稿创建/版本确认的错误接入工作台错误提示条。
-- **阶段B（待办）寻访报告**：SearchRun 级与 JobProfile 级只读漏斗报告端点 + 工作台面板。
+- **阶段B（已完成）寻访报告**：`GET /api/search-runs/:id/report`（当轮漏斗 + Top 候选人 + 待定清单）与 `GET /api/job-profiles/:id/report`（跨 run 累计漏斗 + 去重后最新评估分布），工作台两个折叠面板已接入并完成浏览器验证。两级口径差异（run 级=当轮快照、profile 级分布跟随最新评估）已写入需求基线。
 - **阶段C（待办）澄清访谈 Agent**：七组话题逼问式画像梳理，会话持久化，产出画像草稿字段，工作台简易问答面板。
 - **阶段D（待办）搜索词迭代闭环**：SearchRun 完成后手动触发推荐组 vs 淘汰组分析，产出搜索条件建议并支持前端应用到草稿版本。
 

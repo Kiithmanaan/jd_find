@@ -10,6 +10,8 @@ import type {
   AIAssessmentAuditsResponse,
   ReassessCandidatesResponse,
   HardConditionConfigResponse,
+  SearchRunReportResponse,
+  JobProfileReportResponse,
 } from "./api-types.js";
 
 export type ApiJobProfileVersion = JobProfileVersion;
@@ -58,6 +60,8 @@ export const realApi = {
     } }),
   }),
   run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),
+  runReport: (id: string) => apiRequest<SearchRunReportResponse>(`/api/search-runs/${id}/report`),
+  profileReport: (profileId: string) => apiRequest<JobProfileReportResponse>(`/api/job-profiles/${profileId}/report`),
   cancel: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}/cancel`, { method: "POST" }),
   candidates: (profileId: string) => apiRequest<CandidateSummaryResponse>(`/api/job-profiles/${profileId}/candidates`),
   audits: (runId: string) => apiRequest<AIAssessmentAuditsResponse>(`/api/search-runs/${runId}/ai-assessment-audits`),
