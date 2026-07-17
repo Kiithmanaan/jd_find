@@ -10,6 +10,7 @@ import type {
   PluginBatchClaim,
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
+  ClarificationInterviewSessionRepository,
 } from "../../application/ports.js";
 import type {
   AIAssessmentAuditRecord,
@@ -22,6 +23,28 @@ import type {
   PluginCandidateBatch,
   CandidateAssessmentRecord,
 } from "../../domain/types.js";
+import type { ClarificationInterviewSession } from "../../domain/clarification-interview.js";
+
+export class InMemoryClarificationInterviewSessionRepository implements ClarificationInterviewSessionRepository {
+  private readonly records = new Map<string, ClarificationInterviewSession>();
+
+  async save(session: ClarificationInterviewSession): Promise<ClarificationInterviewSession> {
+    this.records.set(session.id, structuredClone(session));
+    return structuredClone(session);
+  }
+
+  async findById(id: string): Promise<ClarificationInterviewSession | undefined> {
+    const record = this.records.get(id);
+    return record ? structuredClone(record) : undefined;
+  }
+
+  async findByJobProfileId(jobProfileId: string): Promise<ClarificationInterviewSession[]> {
+    return [...this.records.values()]
+      .filter((session) => session.jobProfileId === jobProfileId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .map((session) => structuredClone(session));
+  }
+}
 
 export class InMemoryPluginCandidateBatchRepository implements PluginCandidateBatchRepository {
   private readonly records = new Map<string, PluginCandidateBatch>();

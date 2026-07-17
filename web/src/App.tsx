@@ -8,7 +8,8 @@ import { SearchRunListPanel, type SearchRunListItem } from "./components/shared/
 import { ProfileDetailPanel } from "./components/shared/ProfileDetailPanel.js";
 import { SearchRunReportPanel } from "./components/shared/SearchRunReportPanel.js";
 import { JobProfileReportPanel } from "./components/shared/JobProfileReportPanel.js";
-import type { JobProfile } from "./lib/api-types.js";
+import { ClarificationInterviewPanel } from "./components/shared/ClarificationInterviewPanel.js";
+import type { ClarificationInterviewSession, JobProfile } from "./lib/api-types.js";
 
 const columns: ColumnDef<ApiCandidate>[] = [
   { header: "姓名", accessorFn: (row) => row.resume.name },
@@ -30,6 +31,8 @@ export function App(): React.JSX.Element {
   const [showProfileDetail, setShowProfileDetail] = useState(false);
   const [showRunReport, setShowRunReport] = useState(false);
   const [showProfileReport, setShowProfileReport] = useState(false);
+  const [showInterview, setShowInterview] = useState(false);
+  const [interviewSession, setInterviewSession] = useState<ClarificationInterviewSession | undefined>(undefined);
   const [createRunDialogOpen, setCreateRunDialogOpen] = useState(false);
   const [draftSignalsText, setDraftSignalsText] = useState("");
   const hardConditionConfig = useQuery({
@@ -67,6 +70,17 @@ export function App(): React.JSX.Element {
     return realApi.createDraft(profileId, source, editedSignals);
   }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
   const confirmVersion = useMutation({ mutationFn: (versionId: string) => realApi.confirmVersion(profileId, versionId), onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
+  const startInterview = useMutation({ mutationFn: () => realApi.startInterview(profileId), onSuccess: setInterviewSession });
+  const answerInterview = useMutation({ mutationFn: (answer: string) => {
+    if (!interviewSession) throw new Error("访谈会话不存在。");
+    return realApi.answerInterview(interviewSession.id, answer);
+  }, onSuccess: setInterviewSession });
+  const applyInterviewDraft = useMutation({ mutationFn: async (session: ClarificationInterviewSession) => {
+    const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
+    const draft = session.draftOutput;
+    if (!source || !draft) throw new Error("缺少当前版本或访谈草稿。");
+    return realApi.createDraftFromInterview(profileId, source, draft);
+  }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
   const rows = candidates.data?.currentVersionCandidates ?? run.data?.candidates ?? [];
   const searchRunListItems: SearchRunListItem[] = run.data
     ? [{ ...run.data, jobProfileTitle: confirmedVersion?.title ?? run.data.jobProfileId }]
@@ -109,6 +123,22 @@ export function App(): React.JSX.Element {
           searchRuns={searchRunListItems}
           onSelectRun={setRunId}
           onNavigateToProfiles={() => setRunId("")}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!profileId} onClick={() => setShowInterview((v) => !v)}>
+        {showInterview ? "隐藏澄清访谈" : "澄清访谈（画像梳理）"}
+      </button>
+      {showInterview && <div className="mt-3 rounded border p-4">
+        <ClarificationInterviewPanel
+          session={interviewSession}
+          starting={startInterview.isPending}
+          answering={answerInterview.isPending}
+          error={(startInterview.error ?? answerInterview.error ?? applyInterviewDraft.error)?.message}
+          onStart={() => startInterview.mutate()}
+          onAnswer={(answer) => answerInterview.mutate(answer)}
+          onApplyDraft={(session) => applyInterviewDraft.mutate(session)}
         />
       </div>}
     </section>

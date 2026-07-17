@@ -9,7 +9,9 @@ import type {
   PluginBatchClaim,
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
+  ClarificationInterviewSessionRepository,
 } from "../../application/ports.js";
+import type { ClarificationInterviewSession } from "../../domain/clarification-interview.js";
 import type {
   HardConditionDimension,
   HardConditionOption,
@@ -33,16 +35,51 @@ import {
   toSearchRunCreateInput,
   toSearchRunDomain,
   toSearchRunUpdateInput,
+  toClarificationInterviewSessionCreateInput,
+  toClarificationInterviewSessionDomain,
+  toClarificationInterviewSessionUpdateInput,
   type UserPersistenceRecord,
   type JobProfilePersistenceRecord,
   type JobProfileVersionPersistenceRecord,
   type SearchRunPersistenceRecord,
+  type ClarificationInterviewSessionPersistenceRecord,
 } from "./prisma-mappers.js";
 
 export type PrismaLikeClient = Pick<
   PrismaClient,
-  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord"
+  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord" | "clarificationInterviewSessionRecord"
 >;
+
+export class PrismaClarificationInterviewSessionRepository implements ClarificationInterviewSessionRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async save(session: ClarificationInterviewSession): Promise<ClarificationInterviewSession> {
+    const record = await this.prisma.clarificationInterviewSessionRecord.upsert({
+      where: { id: session.id },
+      create: toClarificationInterviewSessionCreateInput(session),
+      update: toClarificationInterviewSessionUpdateInput(session),
+    });
+
+    return toClarificationInterviewSessionDomain(record as ClarificationInterviewSessionPersistenceRecord);
+  }
+
+  async findById(id: string): Promise<ClarificationInterviewSession | undefined> {
+    const record = await this.prisma.clarificationInterviewSessionRecord.findUnique({ where: { id } });
+    return record
+      ? toClarificationInterviewSessionDomain(record as ClarificationInterviewSessionPersistenceRecord)
+      : undefined;
+  }
+
+  async findByJobProfileId(jobProfileId: string): Promise<ClarificationInterviewSession[]> {
+    const records = await this.prisma.clarificationInterviewSessionRecord.findMany({
+      where: { jobProfileId },
+      orderBy: { createdAt: "desc" },
+    });
+    return records.map((record) =>
+      toClarificationInterviewSessionDomain(record as ClarificationInterviewSessionPersistenceRecord),
+    );
+  }
+}
 
 export class PrismaReassessmentLockRepository implements ReassessmentLockRepository {
   constructor(private readonly prisma: PrismaLikeClient) {}

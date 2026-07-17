@@ -336,6 +336,68 @@ export interface ReassessCandidatesResponse {
   reassessedCount: number;
 }
 
+// ─── 澄清访谈（/api/job-profiles/:id/clarification-interviews 等） ──────────
+
+export type InterviewTopicKey =
+  | "role-purpose"
+  | "hard-gates"
+  | "vital-skills"
+  | "negative-signals"
+  | "target-companies"
+  | "search-keywords"
+  | "soft-preferences";
+
+export interface InterviewTurn {
+  topicKey: InterviewTopicKey;
+  question: string;
+  suggestedAnswer: string;
+  answer?: string;
+  askedAt: string;
+  answeredAt?: string;
+  ai: {
+    provider: string;
+    model: string;
+    promptVersion: string;
+    agentVersion: string;
+    graphVersion?: string;
+    durationMs: number;
+  };
+}
+
+export interface InterviewDraftOutput {
+  jdText: string;
+  hardRequirementNotes: string[];
+  softRequirements: SoftRequirement[];
+  negativeSignals: string[];
+  searchKeywords: string[];
+}
+
+export interface ClarificationInterviewSession {
+  id: Identifier;
+  jobProfileId: Identifier;
+  createdByUserId?: Identifier;
+  status: "InProgress" | "Completed" | "Abandoned";
+  currentTopicIndex: number;
+  turns: InterviewTurn[];
+  currentQuestion?: {
+    topicKey: InterviewTopicKey;
+    question: string;
+    suggestedAnswer: string;
+  };
+  draftOutput?: InterviewDraftOutput;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface ClarificationInterviewListResponse {
+  jobProfileId: Identifier;
+  sessions: ClarificationInterviewSession[];
+}
+
 // ─── 寻访报告（GET /api/search-runs/:id/report、GET /api/job-profiles/:id/report） ──
 
 export interface FunnelCounts {

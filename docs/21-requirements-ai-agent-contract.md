@@ -113,6 +113,44 @@
 - 每条条件必须可验证、可执行。
 - 抽象标签必须转为行为或证据描述。
 
+## 5.1 澄清访谈 Agent（逼问式画像梳理）
+
+定位：
+
+- 多轮问答把"想招什么人"从模糊说法逼问成可执行的画像草稿。
+- 一次只问一个问题；每个问题必须附一条具体的推荐答案（`suggestedAnswer`），让用户确认或纠正。
+- 模糊词（资深、能力强等）必须逼问成可判断的标准。
+- AI 只产出草稿建议，画像确认仍必须由用户动作触发。
+
+七组固定话题（顺序有依赖关系，不可乱序）：
+
+1. `role-purpose` 岗位存在意义
+2. `hard-gates` 硬门槛
+3. `vital-skills` 命脉技能与验证方式
+4. `negative-signals` 排除信号
+5. `target-companies` 目标公司与人才来源
+6. `search-keywords` 搜索关键词与渠道
+7. `soft-preferences` 软性偏好与加分项
+
+会话与产出：
+
+- 会话持久化，状态为 `InProgress`、`Completed`、`Abandoned`。
+- 每轮问答记录 `InterviewTurn`，内嵌该轮 AI 调用元数据（provider、model、prompt version、agent version、graph version、耗时），即本 Agent 的审计载体；不写入 `AIAssessmentAuditRecord`（该表要求关联 SearchRun）。
+- 全部话题回答完毕后产出画像草稿 `draftOutput`：
+  - `jdText`：JD 文本。
+  - `hardRequirementNotes`：硬性条件文本建议（不生成结构化规则，结构化配置仍由用户在硬筛配置中完成）。
+  - `softRequirements`：软性条件（尽量附 `verificationHint`）。
+  - `negativeSignals`：排除信号。
+  - `searchKeywords`：搜索关键词，至少 1 个。
+- 草稿应用走既有 `POST /api/job-profiles/:id/versions/draft`，由前端预填、用户确认。
+
+版本口径：
+
+- prompt version：`clarification-interview-v1`。
+- agent version：`jd-clarification-interview-v1`。
+- LangGraph graph version：`clarification-interview-graph-v1`。
+- Provider 默认 `mock`，可切换 `langgraph-openai`（env：`CLARIFICATION_INTERVIEW_PROVIDER` 等）。
+
 ## 6. 匹配 Agent
 
 输入：

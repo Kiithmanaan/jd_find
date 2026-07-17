@@ -7,6 +7,11 @@ import type {
   SearchRun,
   User,
 } from "../../domain/types.js";
+import type {
+  ClarificationInterviewSession,
+  InterviewDraftOutput,
+  InterviewTurn,
+} from "../../domain/clarification-interview.js";
 
 export type UserPersistenceRecord = {
   id: string;
@@ -376,6 +381,84 @@ function toSearchEventCreateWithoutSearchRunInput(
     occurredAt: event.occurredAt,
     reason: event.reason ?? null,
     metadata: event.metadata ? toJsonInput(event.metadata) : undefined,
+  };
+}
+
+export type ClarificationInterviewSessionPersistenceRecord = {
+  id: string;
+  jobProfileId: string;
+  createdByUserId: string | null;
+  status: ClarificationInterviewSession["status"];
+  currentTopicIndex: number;
+  turns: Prisma.JsonValue;
+  draftOutput: Prisma.JsonValue | null;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+};
+
+export function toClarificationInterviewSessionCreateInput(
+  session: ClarificationInterviewSession,
+): Prisma.ClarificationInterviewSessionRecordCreateInput {
+  return {
+    id: session.id,
+    jobProfile: { connect: { id: session.jobProfileId } },
+    createdByUserId: session.createdByUserId ?? null,
+    status: session.status,
+    currentTopicIndex: session.currentTopicIndex,
+    turns: toJsonInput(session.turns),
+    draftOutput: session.draftOutput ? toJsonInput(session.draftOutput) : undefined,
+    provider: session.provider,
+    model: session.model,
+    promptVersion: session.promptVersion,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    completedAt: session.completedAt ?? null,
+  };
+}
+
+export function toClarificationInterviewSessionUpdateInput(
+  session: ClarificationInterviewSession,
+): Prisma.ClarificationInterviewSessionRecordUpdateInput {
+  return {
+    status: session.status,
+    currentTopicIndex: session.currentTopicIndex,
+    turns: toJsonInput(session.turns),
+    draftOutput: session.draftOutput ? toJsonInput(session.draftOutput) : undefined,
+    provider: session.provider,
+    model: session.model,
+    promptVersion: session.promptVersion,
+    updatedAt: session.updatedAt,
+    completedAt: session.completedAt ?? null,
+  };
+}
+
+export function toClarificationInterviewSessionDomain(
+  record: ClarificationInterviewSessionPersistenceRecord,
+): ClarificationInterviewSession {
+  const turns = (record.turns as unknown as InterviewTurn[]).map((turn) => ({
+    ...turn,
+    askedAt: new Date(turn.askedAt),
+    answeredAt: turn.answeredAt ? new Date(turn.answeredAt) : undefined,
+  }));
+
+  return {
+    id: record.id,
+    jobProfileId: record.jobProfileId,
+    createdByUserId: record.createdByUserId ?? undefined,
+    status: record.status,
+    currentTopicIndex: record.currentTopicIndex,
+    turns,
+    draftOutput: (record.draftOutput as unknown as InterviewDraftOutput | null) ?? undefined,
+    provider: record.provider,
+    model: record.model,
+    promptVersion: record.promptVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    completedAt: record.completedAt ?? undefined,
   };
 }
 

@@ -12,6 +12,8 @@ import type {
   HardConditionConfigResponse,
   SearchRunReportResponse,
   JobProfileReportResponse,
+  ClarificationInterviewSession,
+  InterviewDraftOutput,
 } from "./api-types.js";
 
 export type ApiJobProfileVersion = JobProfileVersion;
@@ -61,6 +63,24 @@ export const realApi = {
   }),
   run: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}`),
   runReport: (id: string) => apiRequest<SearchRunReportResponse>(`/api/search-runs/${id}/report`),
+  startInterview: (profileId: string) => apiRequest<ClarificationInterviewSession>(`/api/job-profiles/${profileId}/clarification-interviews`, { method: "POST" }),
+  answerInterview: (sessionId: string, answer: string) => apiRequest<ClarificationInterviewSession>(`/api/clarification-interviews/${sessionId}/answers`, {
+    method: "POST",
+    body: JSON.stringify({ answer }),
+  }),
+  interview: (sessionId: string) => apiRequest<ClarificationInterviewSession>(`/api/clarification-interviews/${sessionId}`),
+  /** 用访谈草稿创建版本草稿：JD/软性条件/排除信号/搜索关键词来自草稿，结构化硬筛规则沿用当前版本。 */
+  createDraftFromInterview: (profileId: string, source: ApiJobProfileVersion, draft: InterviewDraftOutput) => apiRequest<ApiJobProfileVersion>(`/api/job-profiles/${profileId}/versions/draft`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: source.title,
+      jdText: draft.jdText,
+      searchCondition: { ...source.searchCondition, keywords: draft.searchKeywords },
+      hardRequirements: source.hardRequirements,
+      softRequirements: draft.softRequirements.length > 0 ? draft.softRequirements : source.softRequirements,
+      negativeSignals: draft.negativeSignals,
+    } satisfies JobProfileVersionDraftRequest),
+  }),
   profileReport: (profileId: string) => apiRequest<JobProfileReportResponse>(`/api/job-profiles/${profileId}/report`),
   cancel: (id: string) => apiRequest<ApiSearchRun>(`/api/search-runs/${id}/cancel`, { method: "POST" }),
   candidates: (profileId: string) => apiRequest<CandidateSummaryResponse>(`/api/job-profiles/${profileId}/candidates`),

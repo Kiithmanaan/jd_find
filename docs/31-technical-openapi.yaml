@@ -294,6 +294,119 @@ paths:
           $ref: "#/components/responses/JobProfileNotFound"
         "422":
           $ref: "#/components/responses/DomainError"
+  /job-profiles/{id}/clarification-interviews:
+    post:
+      summary: 发起澄清访谈（逼问式画像梳理），返回会话与第一个问题
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "201":
+          description: 已创建的访谈会话（含 currentQuestion）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+    get:
+      summary: 列出画像下的澄清访谈会话（按创建时间降序）
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, sessions]
+                properties:
+                  jobProfileId:
+                    type: string
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+  /clarification-interviews/{id}:
+    get:
+      summary: 查询澄清访谈会话
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 会话详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /clarification-interviews/{id}/answers:
+    post:
+      summary: 回答当前访谈问题；还有话题则返回下一问，否则完成并产出画像草稿
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer:
+                  type: string
+      responses:
+        "200":
+          description: 更新后的会话（进行中含 currentQuestion，完成后含 draftOutput）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "400":
+          description: 请求校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/DomainError"
   /job-profiles/{id}/versions:
     get:
       summary: 查询 JobProfile 版本历史
@@ -636,6 +749,106 @@ components:
                 type: string
               message:
                 type: string
+    ClarificationInterviewSession:
+      type: object
+      description: 澄清访谈会话。turns 内嵌每轮 AI 调用元数据即审计；进行中含 currentQuestion，完成后含 draftOutput。
+      required: [id, jobProfileId, status, currentTopicIndex, turns, provider, model, promptVersion, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        jobProfileId:
+          type: string
+        createdByUserId:
+          type: string
+        status:
+          type: string
+          enum: [InProgress, Completed, Abandoned]
+        currentTopicIndex:
+          type: integer
+        turns:
+          type: array
+          items:
+            type: object
+            required: [topicKey, question, suggestedAnswer, askedAt, ai]
+            properties:
+              topicKey:
+                type: string
+                enum: [role-purpose, hard-gates, vital-skills, negative-signals, target-companies, search-keywords, soft-preferences]
+              question:
+                type: string
+              suggestedAnswer:
+                type: string
+              answer:
+                type: string
+              askedAt:
+                type: string
+                format: date-time
+              answeredAt:
+                type: string
+                format: date-time
+              ai:
+                type: object
+                required: [provider, model, promptVersion, agentVersion, durationMs]
+                properties:
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                  promptVersion:
+                    type: string
+                  agentVersion:
+                    type: string
+                  graphVersion:
+                    type: string
+                  durationMs:
+                    type: integer
+        currentQuestion:
+          type: object
+          required: [topicKey, question, suggestedAnswer]
+          properties:
+            topicKey:
+              type: string
+            question:
+              type: string
+            suggestedAnswer:
+              type: string
+        draftOutput:
+          type: object
+          required: [jdText, hardRequirementNotes, softRequirements, negativeSignals, searchKeywords]
+          properties:
+            jdText:
+              type: string
+            hardRequirementNotes:
+              type: array
+              items:
+                type: string
+            softRequirements:
+              type: array
+              items:
+                type: object
+            negativeSignals:
+              type: array
+              items:
+                type: string
+            searchKeywords:
+              type: array
+              items:
+                type: string
+        provider:
+          type: string
+        model:
+          type: string
+        promptVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
     FunnelCounts:
       type: object
       description: 寻访漏斗计数：原始提交→去重→硬筛→评估→推荐结论分布。

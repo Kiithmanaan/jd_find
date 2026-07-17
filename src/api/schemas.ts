@@ -191,6 +191,10 @@ export const resumeAttachmentUploadSchema = z.object({
   contentBase64: nonEmptyString,
 });
 
+export const interviewAnswerRequestSchema = z.object({
+  answer: nonEmptyString,
+});
+
 export const jobProfileVersionDraftRequestSchema = z.object({
   title: nonEmptyString,
   jdText: nonEmptyString,

@@ -235,6 +235,85 @@ test("API 返回 SearchRun 级与 JobProfile 级寻访报告", async () => {
   assert.equal(profileBody.runs[0].searchRunId, "api-run-report");
 });
 
+test("API 支持澄清访谈闭环：发起、逐题回答、完成产出草稿", async () => {
+  const app = createApp({ idGenerator: () => "api-interview-run" });
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const started = await app.inject({
+    method: "POST",
+    url: "/api/job-profiles/job-1/clarification-interviews",
+  });
+  assert.equal(started.statusCode, 201);
+  const session = started.json();
+  assert.equal(session.status, "InProgress");
+  assert.equal(session.currentQuestion.topicKey, "role-purpose");
+  assert.ok(session.currentQuestion.suggestedAnswer);
+
+  let latest = session;
+  for (let index = 0; index < 7; index += 1) {
+    const answered = await app.inject({
+      method: "POST",
+      url: `/api/clarification-interviews/${session.id}/answers`,
+      payload: { answer: `第${index}轮回答：解决方案；客户成功` },
+    });
+    assert.equal(answered.statusCode, 200);
+    latest = answered.json();
+  }
+
+  assert.equal(latest.status, "Completed");
+  assert.equal(latest.turns.length, 7);
+  assert.equal(latest.currentQuestion, undefined);
+  assert.ok(latest.draftOutput);
+  assert.ok(latest.draftOutput.searchKeywords.length >= 1);
+
+  const fetched = await app.inject({
+    method: "GET",
+    url: `/api/clarification-interviews/${session.id}`,
+  });
+  assert.equal(fetched.statusCode, 200);
+  assert.equal(fetched.json().status, "Completed");
+
+  const listed = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/clarification-interviews",
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.json().sessions.length, 1);
+
+  const extraAnswer = await app.inject({
+    method: "POST",
+    url: `/api/clarification-interviews/${session.id}/answers`,
+    payload: { answer: "已完成后的多余回答" },
+  });
+  assert.equal(extraAnswer.statusCode, 422);
+});
+
+test("API 澄清访谈对不存在资源返回 404", async () => {
+  const app = createApp();
+
+  const started = await app.inject({
+    method: "POST",
+    url: "/api/job-profiles/missing-profile/clarification-interviews",
+  });
+  assert.equal(started.statusCode, 404);
+
+  const answered = await app.inject({
+    method: "POST",
+    url: "/api/clarification-interviews/missing-session/answers",
+    payload: { answer: "回答" },
+  });
+  assert.equal(answered.statusCode, 404);
+});
+
 test("API 查询不存在资源的寻访报告返回 404", async () => {
   const app = createApp();
 

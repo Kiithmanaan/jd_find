@@ -63,6 +63,7 @@ model JobProfileRecord {
   updatedAt         DateTime         @updatedAt
   searchRuns        SearchRunRecord[]
   versions          JobProfileVersionRecord[]
+  clarificationInterviews ClarificationInterviewSessionRecord[]
 
   @@index([status])
 }
@@ -242,4 +243,23 @@ model HardConditionOptionRecord {
 
   @@index([dimensionKey])
   @@unique([dimensionKey, value])
+}
+
+model ClarificationInterviewSessionRecord {
+  id                String    @id
+  jobProfileId      String
+  createdByUserId   String?
+  status            String
+  currentTopicIndex Int       @default(0)
+  turns             Json
+  draftOutput       Json?
+  provider          String
+  model             String
+  promptVersion     String
+  createdAt         DateTime
+  updatedAt         DateTime
+  completedAt       DateTime?
+  jobProfile        JobProfileRecord @relation(fields: [jobProfileId], references: [id], onDelete: Cascade)
+
+  @@index([jobProfileId, status])
 }

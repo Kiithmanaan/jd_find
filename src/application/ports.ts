@@ -13,6 +13,15 @@ import type {
   PluginCandidateBatch,
   CandidateAssessmentRecord,
 } from "../domain/types.js";
+import type {
+  ClarificationInterviewSession,
+  InterviewDraftOutput,
+  InterviewTurn,
+} from "../domain/clarification-interview.js";
+import type {
+  InterviewQuestionDraft,
+  InterviewTopic,
+} from "../domain/clarification-interview-contract.js";
 
 export interface SourceAdapter {
   acquireCandidates(jobProfile: JobProfile, searchRun: SearchRun): Promise<{
@@ -126,4 +135,27 @@ export interface ReassessmentLockRepository {
 export interface AttachmentStorage {
   save(searchRunId: string, candidateId: string, filename: string, content: Buffer): Promise<string>;
   read(storageKey: string): Promise<Buffer>;
+}
+
+export interface ClarificationInterviewPort {
+  readonly providerName?: string;
+  readonly modelName?: string;
+  readonly graphVersion?: string;
+
+  nextQuestion(input: {
+    jobProfile: JobProfile;
+    topic: InterviewTopic;
+    turns: InterviewTurn[];
+  }): Promise<InterviewQuestionDraft>;
+
+  produceDraft(input: {
+    jobProfile: JobProfile;
+    turns: InterviewTurn[];
+  }): Promise<InterviewDraftOutput>;
+}
+
+export interface ClarificationInterviewSessionRepository {
+  save(session: ClarificationInterviewSession): Promise<ClarificationInterviewSession>;
+  findById(id: string): Promise<ClarificationInterviewSession | undefined>;
+  findByJobProfileId(jobProfileId: string): Promise<ClarificationInterviewSession[]>;
 }

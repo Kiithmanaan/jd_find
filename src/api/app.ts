@@ -47,12 +47,25 @@ import { InMemorySearchRunQueue } from "../infrastructure/memory/in-memory-searc
 import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
 import {
   formatZodError,
+  interviewAnswerRequestSchema,
   jobProfileVersionDraftRequestSchema,
   loginRequestSchema,
   oneTimeSearchRequestSchema,
   pluginCandidateSubmissionSchema,
   resumeAttachmentUploadSchema,
 } from "./schemas.js";
+import {
+  ClarificationInterviewService,
+  SessionNotFoundError,
+} from "../application/clarification-interview.service.js";
+import { InMemoryClarificationInterviewSessionRepository } from "../infrastructure/memory/in-memory-repositories.js";
+import { MockClarificationInterview } from "../infrastructure/mock/mock-clarification-interview.js";
+import type {
+  ClarificationInterviewPort,
+  ClarificationInterviewSessionRepository,
+} from "../application/ports.js";
+import type { ClarificationInterviewSession } from "../domain/clarification-interview.js";
+import { currentUnansweredTurn } from "../domain/clarification-interview.js";
 
 export interface CreateAppOptions {
   idGenerator?: () => string;
@@ -70,6 +83,8 @@ export interface CreateAppOptions {
   pluginAggregationQueue?: PluginAggregationQueue;
   attachmentStorageDir?: string;
   attachmentStorage?: AttachmentStorage;
+  clarificationInterviews?: ClarificationInterviewSessionRepository;
+  clarificationInterviewAI?: ClarificationInterviewPort;
   auth?: {
     enabled?: boolean;
     jwtSecret?: string;
@@ -100,6 +115,16 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const attachmentStorageDir = options.attachmentStorageDir ?? process.env.RESUME_ATTACHMENT_DIR ?? join(process.cwd(), "data", "resume-attachments");
   const attachmentStorage = options.attachmentStorage ?? new LocalAttachmentStorage(attachmentStorageDir);
   const maxResumeAttachmentBytes = 20 * 1024 * 1024;
+
+  const clarificationInterviews =
+    options.clarificationInterviews ?? new InMemoryClarificationInterviewSessionRepository();
+  const clarificationInterviewAI = options.clarificationInterviewAI ?? new MockClarificationInterview();
+  const clarificationInterviewService = new ClarificationInterviewService({
+    sessions: clarificationInterviews,
+    jobProfiles,
+    interviewAI: clarificationInterviewAI,
+    idGenerator: options.idGenerator ? () => `${options.idGenerator!()}-interview` : undefined,
+  });
 
   const pluginCandidateService = new PluginCandidateService({
     searchRuns,
@@ -641,6 +666,95 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     });
   });
 
+  app.post<{ Params: { id: string } }>("/api/job-profiles/:id/clarification-interviews", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const session = await clarificationInterviewService.start(
+      jobProfile,
+      currentUser.status === "valid" ? currentUser.payload.sub : undefined,
+    );
+    return reply.code(201).send(toInterviewSessionResponse(session));
+  });
+
+  app.get<{ Params: { id: string } }>("/api/job-profiles/:id/clarification-interviews", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const sessions = await clarificationInterviewService.listByJobProfile(jobProfile.id);
+    return reply.code(200).send({
+      jobProfileId: jobProfile.id,
+      sessions: sessions.map(toInterviewSessionResponse),
+    });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/clarification-interviews/:id", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const session = await clarificationInterviewService.get(request.params.id);
+    if (!session) {
+      return reply.code(404).send({ error: "InterviewSessionNotFound", message: "Interview session was not found." });
+    }
+    if (!canAccessInterviewSession(session, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this interview session." });
+    }
+
+    return reply.code(200).send(toInterviewSessionResponse(session));
+  });
+
+  app.post<{ Params: { id: string } }>("/api/clarification-interviews/:id/answers", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const existing = await clarificationInterviewService.get(request.params.id);
+    if (!existing) {
+      return reply.code(404).send({ error: "InterviewSessionNotFound", message: "Interview session was not found." });
+    }
+    if (!canAccessInterviewSession(existing, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this interview session." });
+    }
+
+    const parsedBody = interviewAnswerRequestSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "ValidationError", issues: formatZodError(parsedBody.error) });
+    }
+
+    try {
+      const session = await clarificationInterviewService.answer(request.params.id, parsedBody.data.answer);
+      return reply.code(200).send(toInterviewSessionResponse(session));
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        return reply.code(404).send({ error: "InterviewSessionNotFound", message: error.message });
+      }
+      throw error;
+    }
+  });
+
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {
     const currentUser = await authenticateRequest(request.headers.authorization, "web");
     if (authEnabled && currentUser.status !== "valid") {
@@ -726,6 +840,29 @@ function canAccessJobProfile(jobProfile: JobProfile, currentUser: AuthenticatedR
   }
 
   return jobProfile.createdByUserId === currentUser.payload.sub;
+}
+
+function canAccessInterviewSession(
+  session: ClarificationInterviewSession,
+  currentUser: AuthenticatedRequestState,
+): boolean {
+  if (currentUser.status !== "valid" || !session.createdByUserId) {
+    return true;
+  }
+
+  return session.createdByUserId === currentUser.payload.sub;
+}
+
+function toInterviewSessionResponse(session: ClarificationInterviewSession): ClarificationInterviewSession & {
+  currentQuestion?: { topicKey: string; question: string; suggestedAnswer: string };
+} {
+  const pending = currentUnansweredTurn(session);
+  return {
+    ...session,
+    currentQuestion: pending
+      ? { topicKey: pending.topicKey, question: pending.question, suggestedAnswer: pending.suggestedAnswer }
+      : undefined,
+  };
 }
 
 function toSearchRunResponse(searchRun: SearchRun): PublicSearchRun {
