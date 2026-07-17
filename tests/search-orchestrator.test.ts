@@ -5,6 +5,7 @@ import { DomainError } from "../src/domain/errors.js";
 import type { AIAssessmentPort } from "../src/application/ports.js";
 import { MockAIAssessment } from "../src/infrastructure/mock/mock-ai-assessment.js";
 import { MockSourceAdapter } from "../src/infrastructure/mock/mock-source-adapter.js";
+import { MATCH_ASSESSMENT_PROMPT_VERSION } from "../src/domain/ai-assessment-contract.js";
 import {
   InMemoryAIAssessmentAuditSink,
   InMemorySearchRunRepository,
@@ -118,7 +119,7 @@ test("AI 评估失败时保存 Failed 快照并向上抛错", async () => {
   assert.equal(audit?.status, "failure");
   assert.equal(audit?.errorType, "Error");
   assert.equal(audit?.errorMessage, "AI service unavailable");
-  assert.equal(audit?.promptVersion, "match-assessment-v1");
+  assert.equal(audit?.promptVersion, MATCH_ASSESSMENT_PROMPT_VERSION);
   assert.deepEqual(
     saved?.events.map((event) => event.type),
     [

@@ -20,12 +20,30 @@ export class MockAIAssessment implements AIAssessmentPort {
       const keywordMatches = jobProfile.softRequirements.filter((requirement) =>
         candidate.resume.summary.includes(requirement.label),
       );
-      const score = Math.min(100, 70 + keywordMatches.length * 10);
+      const hitSignals = jobProfile.negativeSignals.filter((signal) =>
+        candidate.resume.summary.includes(signal),
+      );
+      const baseScore = Math.min(100, 70 + keywordMatches.length * 10);
+      const score = hitSignals.length > 0 ? Math.max(0, baseScore - 15) : baseScore;
+      const baseRecommendation: MatchAssessment["recommendation"] = baseScore >= 85 ? "推荐" : "待定";
+      const recommendation: MatchAssessment["recommendation"] =
+        hitSignals.length > 0 && baseRecommendation === "推荐" ? "待定" : baseRecommendation;
+      const signalRiskPoints = hitSignals.map((signal) => `命中排除信号：${signal}`);
+      const genericRiskPoints =
+        keywordMatches.length === jobProfile.softRequirements.length
+          ? []
+          : ["部分软性条件需要猎头进一步人工判断"];
+      const riskPoints = signalRiskPoints.concat(genericRiskPoints).slice(0, 3);
 
       assessments.set(candidate.id, {
         score,
-        recommendation: score >= 85 ? "推荐" : "待定",
-        recommendationReason: score >= 85 ? "软性条件匹配度较高。" : "存在基础相关性，部分条件需要进一步确认。",
+        recommendation,
+        recommendationReason:
+          hitSignals.length > 0
+            ? "候选人摘要命中排除信号，评估降档，需要人工复核。"
+            : recommendation === "推荐"
+              ? "软性条件匹配度较高。"
+              : "存在基础相关性，部分条件需要进一步确认。",
         matchedPoints:
           keywordMatches.length > 0
             ? keywordMatches.map((requirement) => `具备${requirement.label}相关经历`)
@@ -34,11 +52,8 @@ export class MockAIAssessment implements AIAssessmentPort {
           keywordMatches.length === jobProfile.softRequirements.length
             ? []
             : ["部分软性条件缺少直接证据"],
-        riskPoints:
-          keywordMatches.length === jobProfile.softRequirements.length
-            ? []
-            : ["部分软性条件需要猎头进一步人工判断"],
-        trace: `候选人摘要与 ${keywordMatches.length} 个软性条件出现文本证据匹配。`,
+        riskPoints,
+        trace: `候选人摘要与 ${keywordMatches.length} 个软性条件出现文本证据匹配，命中 ${hitSignals.length} 条排除信号。`,
         assessedAt: new Date(),
         jobProfileVersionId: jobProfile.currentVersionId,
         promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,

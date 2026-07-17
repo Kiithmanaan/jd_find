@@ -39,21 +39,39 @@ import {
   InMemoryPluginCandidateBatchRepository,
   InMemoryCandidateAssessmentRepository,
   InMemoryReassessmentLockRepository,
+  InMemoryClarificationInterviewSessionRepository,
+  InMemorySearchRefinementSuggestionRepository,
 } from "../infrastructure/memory/in-memory-repositories.js";
 import { InMemoryRateLimiter } from "../infrastructure/memory/in-memory-rate-limiter.js";
-import { BatchConflictError, ReassessmentInProgressError } from "../domain/errors.js";
+import { BatchConflictError, ReassessmentInProgressError, RefinementInProgressError } from "../domain/errors.js";
+import { generateSearchRefinement } from "../application/generate-search-refinement.js";
+import { MockSearchRefinement } from "../infrastructure/mock/mock-search-refinement.js";
+import type { SearchRefinementPort, SearchRefinementSuggestionRepository } from "../application/ports.js";
 import { LocalAttachmentStorage } from "../infrastructure/local/local-attachment-storage.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
+import { summarizeJobProfileReport, summarizeSearchRunReport } from "../domain/search-report.js";
 import { InMemorySearchRunQueue } from "../infrastructure/memory/in-memory-search-run-queue.js";
 import { MockAIAssessment } from "../infrastructure/mock/mock-ai-assessment.js";
 import {
   formatZodError,
+  interviewAnswerRequestSchema,
   jobProfileVersionDraftRequestSchema,
   loginRequestSchema,
   oneTimeSearchRequestSchema,
   pluginCandidateSubmissionSchema,
   resumeAttachmentUploadSchema,
 } from "./schemas.js";
+import {
+  ClarificationInterviewService,
+  SessionNotFoundError,
+} from "../application/clarification-interview.service.js";
+import { MockClarificationInterview } from "../infrastructure/mock/mock-clarification-interview.js";
+import type {
+  ClarificationInterviewPort,
+  ClarificationInterviewSessionRepository,
+} from "../application/ports.js";
+import type { ClarificationInterviewSession } from "../domain/clarification-interview.js";
+import { currentUnansweredTurn } from "../domain/clarification-interview.js";
 
 export interface CreateAppOptions {
   idGenerator?: () => string;
@@ -71,6 +89,10 @@ export interface CreateAppOptions {
   pluginAggregationQueue?: PluginAggregationQueue;
   attachmentStorageDir?: string;
   attachmentStorage?: AttachmentStorage;
+  clarificationInterviews?: ClarificationInterviewSessionRepository;
+  clarificationInterviewAI?: ClarificationInterviewPort;
+  refinementSuggestions?: SearchRefinementSuggestionRepository;
+  searchRefinementAI?: SearchRefinementPort;
   auth?: {
     enabled?: boolean;
     jwtSecret?: string;
@@ -111,6 +133,20 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const pluginRateLimitWindowSeconds = options.pluginRateLimits?.windowSeconds ?? 60;
   const pluginCandidateSubmissionRateLimit = options.pluginRateLimits?.candidateSubmissionPerWindow ?? 60;
   const pluginAttachmentUploadRateLimit = options.pluginRateLimits?.attachmentUploadPerWindow ?? 30;
+
+  const clarificationInterviews =
+    options.clarificationInterviews ?? new InMemoryClarificationInterviewSessionRepository();
+  const clarificationInterviewAI = options.clarificationInterviewAI ?? new MockClarificationInterview();
+  const clarificationInterviewService = new ClarificationInterviewService({
+    sessions: clarificationInterviews,
+    jobProfiles,
+    interviewAI: clarificationInterviewAI,
+    idGenerator: options.idGenerator ? () => `${options.idGenerator!()}-interview` : undefined,
+  });
+
+  const refinementSuggestions =
+    options.refinementSuggestions ?? new InMemorySearchRefinementSuggestionRepository();
+  const searchRefinementAI = options.searchRefinementAI ?? new MockSearchRefinement();
 
   const pluginCandidateService = new PluginCandidateService({
     searchRuns,
@@ -621,6 +657,211 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     }
   });
 
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id/report", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+
+    const report = summarizeSearchRunReport(searchRun);
+    return reply.code(200).send({
+      ...report,
+      topCandidates: report.topCandidates.map(toCandidateResponse),
+      pendingCandidates: report.pendingCandidates.map(toCandidateResponse),
+    });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/job-profiles/:id/report", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const currentVersion = jobProfile.currentVersionId
+      ? await jobProfileVersions.findById(jobProfile.currentVersionId)
+      : await jobProfileVersions.findLatestConfirmedByJobProfileId(jobProfile.id);
+    if (!currentVersion) {
+      return reply.code(422).send({ error: "JobProfileVersionMissing", message: "Confirmed version was not found." });
+    }
+
+    const runs = await searchRuns.findByJobProfileId(jobProfile.id);
+    const accessibleRuns = runs.filter((searchRun) => canAccessSearchRun(searchRun, currentUser));
+    const report = summarizeJobProfileReport(
+      accessibleRuns,
+      currentVersion.id,
+      await candidateAssessments.findLatestByJobProfileVersion(jobProfile.id, currentVersion.id),
+    );
+    return reply.code(200).send({
+      ...report,
+      jobProfileId: jobProfile.id,
+    });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/job-profiles/:id/clarification-interviews", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const session = await clarificationInterviewService.start(
+      jobProfile,
+      currentUser.status === "valid" ? currentUser.payload.sub : undefined,
+    );
+    return reply.code(201).send(toInterviewSessionResponse(session));
+  });
+
+  app.get<{ Params: { id: string } }>("/api/job-profiles/:id/clarification-interviews", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const jobProfile = await jobProfiles.findById(request.params.id);
+    if (!jobProfile) {
+      return reply.code(404).send({ error: "JobProfileNotFound", message: "Job profile was not found." });
+    }
+    if (!canAccessJobProfile(jobProfile, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this job profile." });
+    }
+
+    const sessions = await clarificationInterviewService.listByJobProfile(jobProfile.id);
+    return reply.code(200).send({
+      jobProfileId: jobProfile.id,
+      sessions: sessions.map(toInterviewSessionResponse),
+    });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/clarification-interviews/:id", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const session = await clarificationInterviewService.get(request.params.id);
+    if (!session) {
+      return reply.code(404).send({ error: "InterviewSessionNotFound", message: "Interview session was not found." });
+    }
+    if (!canAccessInterviewSession(session, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this interview session." });
+    }
+
+    return reply.code(200).send(toInterviewSessionResponse(session));
+  });
+
+  app.post<{ Params: { id: string } }>("/api/clarification-interviews/:id/answers", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const existing = await clarificationInterviewService.get(request.params.id);
+    if (!existing) {
+      return reply.code(404).send({ error: "InterviewSessionNotFound", message: "Interview session was not found." });
+    }
+    if (!canAccessInterviewSession(existing, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this interview session." });
+    }
+
+    const parsedBody = interviewAnswerRequestSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "ValidationError", issues: formatZodError(parsedBody.error) });
+    }
+
+    try {
+      const session = await clarificationInterviewService.answer(request.params.id, parsedBody.data.answer);
+      return reply.code(200).send(toInterviewSessionResponse(session));
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        return reply.code(404).send({ error: "InterviewSessionNotFound", message: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/search-runs/:id/refinement-suggestions", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+    if (searchRun.status !== "Completed") {
+      return reply.code(422).send({
+        error: "RefinementNotReady",
+        message: "Search refinement requires a completed search run.",
+      });
+    }
+
+    const jobProfile = await jobProfiles.findById(searchRun.jobProfileId);
+    if (!jobProfile) {
+      return reply.code(422).send({ error: "SearchRunInvalid", message: "Search run job profile was not found." });
+    }
+
+    // 锁键空间用 "refinement:" 前缀与重评估隔离（锁表两列无 FK，见 docs/11 决策记录）。
+    const lockKey = `refinement:${searchRun.id}`;
+    if (!await reassessmentLocks.tryAcquire(jobProfile.id, lockKey)) {
+      return reply.code(409).send({ error: "RefinementInProgress", message: new RefinementInProgressError().message });
+    }
+    try {
+      const suggestion = await generateSearchRefinement(searchRun, jobProfile, {
+        refinementAI: searchRefinementAI,
+        suggestions: refinementSuggestions,
+        aiAssessmentAudit: aiAssessmentAudits,
+      });
+      return reply.code(201).send({ suggestion });
+    } finally {
+      await reassessmentLocks.release(jobProfile.id, lockKey);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>("/api/search-runs/:id/refinement-suggestions", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "web");
+    if (authEnabled && currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "User cannot access this search run." });
+    }
+
+    const suggestions = await refinementSuggestions.findBySearchRunId(searchRun.id);
+    return reply.code(200).send({ searchRunId: searchRun.id, suggestions });
+  });
+
   app.get<{ Params: { id: string } }>("/api/search-runs/:id/ai-assessment-audits", async (request, reply) => {
     const currentUser = await authenticateRequest(request.headers.authorization, "web");
     if (authEnabled && currentUser.status !== "valid") {
@@ -720,6 +961,29 @@ function canAccessJobProfile(jobProfile: JobProfile, currentUser: AuthenticatedR
   }
 
   return jobProfile.createdByUserId === currentUser.payload.sub;
+}
+
+function canAccessInterviewSession(
+  session: ClarificationInterviewSession,
+  currentUser: AuthenticatedRequestState,
+): boolean {
+  if (currentUser.status !== "valid" || !session.createdByUserId) {
+    return true;
+  }
+
+  return session.createdByUserId === currentUser.payload.sub;
+}
+
+function toInterviewSessionResponse(session: ClarificationInterviewSession): ClarificationInterviewSession & {
+  currentQuestion?: { topicKey: string; question: string; suggestedAnswer: string };
+} {
+  const pending = currentUnansweredTurn(session);
+  return {
+    ...session,
+    currentQuestion: pending
+      ? { topicKey: pending.topicKey, question: pending.question, suggestedAnswer: pending.suggestedAnswer }
+      : undefined,
+  };
 }
 
 function toSearchRunResponse(searchRun: SearchRun): PublicSearchRun {

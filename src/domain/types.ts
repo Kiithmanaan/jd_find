@@ -107,6 +107,8 @@ export interface SoftRequirement {
   label: string;
   weight: number;
   description: string;
+  /** 验证方式提示：看简历中什么信号才算真正满足该条件。 */
+  verificationHint?: string;
 }
 
 export interface JobProfile {
@@ -119,6 +121,8 @@ export interface JobProfile {
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  /** 排除信号：命中即提示风险的简历特征描述，空数组表示未配置。 */
+  negativeSignals: string[];
   confirmedAt?: Date;
 }
 
@@ -131,6 +135,7 @@ export interface JobProfileVersion {
   searchCondition: SearchCondition;
   hardRequirements: HardRequirement[];
   softRequirements: SoftRequirement[];
+  negativeSignals: string[];
   status: "Draft" | "Confirmed";
   createdAt: Date;
   confirmedAt?: Date;
@@ -161,7 +166,7 @@ export interface MatchAssessment {
   agentVersion: string;
 }
 
-export type AIAssessmentAuditAgentType = "job-profile" | "soft-condition" | "match-assessment";
+export type AIAssessmentAuditAgentType = "job-profile" | "soft-condition" | "match-assessment" | "search-refinement";
 export type AIAssessmentAuditStatus = "success" | "failure";
 
 export interface AIAssessmentAuditRecord {
@@ -178,7 +183,10 @@ export interface AIAssessmentAuditRecord {
   prompt: string;
   candidateIds: Identifier[];
   inputSnapshot: {
-    jobProfile: Pick<JobProfile, "id" | "title" | "searchCondition" | "hardRequirements" | "softRequirements">;
+    jobProfile: Pick<
+      JobProfile,
+      "id" | "title" | "searchCondition" | "hardRequirements" | "softRequirements" | "negativeSignals"
+    >;
     candidates: Array<Pick<CandidateResult, "id" | "fingerprint" | "resume">>;
   };
   outputSnapshot: Array<{

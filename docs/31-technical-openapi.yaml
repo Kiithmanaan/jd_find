@@ -196,6 +196,277 @@ paths:
           $ref: "#/components/responses/AuthError"
         "404":
           $ref: "#/components/responses/SearchRunNotFound"
+  /search-runs/{id}/refinement-suggestions:
+    post:
+      summary: 触发搜索词迭代分析（推荐组 vs 淘汰组），产出下一轮搜索条件建议
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "201":
+          description: 生成的搜索条件建议
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestion]
+                properties:
+                  suggestion:
+                    $ref: "#/components/schemas/SearchRefinementSuggestion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+        "409":
+          description: 同一 SearchRun 的分析正在运行
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: SearchRun 未完成或无已评估候选人（RefinementNotReady）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      summary: 查询 SearchRun 的搜索条件建议历史（按创建时间降序）
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 建议列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, suggestions]
+                properties:
+                  searchRunId:
+                    type: string
+                  suggestions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchRefinementSuggestion"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+  /search-runs/{id}/report:
+    get:
+      summary: 查询单次 SearchRun 的寻访报告（当轮快照口径，重评估不回写）
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 寻访报告：漏斗数字、Top 候选人、待定清单
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, jobProfileId, jobProfileVersionId, status, funnel, topCandidates, pendingCandidates]
+                properties:
+                  searchRunId:
+                    type: string
+                  jobProfileId:
+                    type: string
+                  jobProfileVersionId:
+                    type: string
+                  status:
+                    type: string
+                  funnel:
+                    $ref: "#/components/schemas/FunnelCounts"
+                  topCandidates:
+                    type: array
+                    description: 推荐候选人按匹配分降序前 5，不足时补高分待定候选人。
+                    items:
+                      $ref: "#/components/schemas/CandidateResult"
+                  pendingCandidates:
+                    type: array
+                    description: 全部推荐结论为待定的候选人，按匹配分降序。
+                    items:
+                      $ref: "#/components/schemas/CandidateResult"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+  /job-profiles/{id}/report:
+    get:
+      summary: 查询 JobProfile 级汇总报告（跨 SearchRun 累计漏斗 + 去重后最新评估分布）
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 汇总报告。累计漏斗为各 run 当轮快照相加；推荐结论分布为跨 run 按 fingerprint 去重后叠加最新评估（含重评估覆盖），两者口径不同。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, currentVersionId, totalSearchRuns, cumulativeFunnel, uniqueCandidateCount, currentRecommendationDistribution, runs]
+                properties:
+                  jobProfileId:
+                    type: string
+                  currentVersionId:
+                    type: string
+                  totalSearchRuns:
+                    type: integer
+                  cumulativeFunnel:
+                    $ref: "#/components/schemas/FunnelCounts"
+                  uniqueCandidateCount:
+                    type: integer
+                  currentRecommendationDistribution:
+                    type: object
+                    required: [recommended, pending, notRecommended, unassessed]
+                    properties:
+                      recommended:
+                        type: integer
+                      pending:
+                        type: integer
+                      notRecommended:
+                        type: integer
+                      unassessed:
+                        type: integer
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      required: [searchRunId, status, createdAt, funnel]
+                      properties:
+                        searchRunId:
+                          type: string
+                        status:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+                        funnel:
+                          $ref: "#/components/schemas/FunnelCounts"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+        "422":
+          $ref: "#/components/responses/DomainError"
+  /job-profiles/{id}/clarification-interviews:
+    post:
+      summary: 发起澄清访谈（逼问式画像梳理），返回会话与第一个问题
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "201":
+          description: 已创建的访谈会话（含 currentQuestion）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+    get:
+      summary: 列出画像下的澄清访谈会话（按创建时间降序）
+      parameters:
+        - $ref: "#/components/parameters/JobProfileId"
+      responses:
+        "200":
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobProfileId, sessions]
+                properties:
+                  jobProfileId:
+                    type: string
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/JobProfileNotFound"
+  /clarification-interviews/{id}:
+    get:
+      summary: 查询澄清访谈会话
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 会话详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /clarification-interviews/{id}/answers:
+    post:
+      summary: 回答当前访谈问题；还有话题则返回下一问，否则完成并产出画像草稿
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer:
+                  type: string
+      responses:
+        "200":
+          description: 更新后的会话（进行中含 currentQuestion，完成后含 draftOutput）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationInterviewSession"
+        "400":
+          description: 请求校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/DomainError"
   /job-profiles/{id}/versions:
     get:
       summary: 查询 JobProfile 版本历史
@@ -538,6 +809,179 @@ components:
                 type: string
               message:
                 type: string
+    SearchRefinementSuggestion:
+      type: object
+      description: 搜索词迭代分析产出的搜索条件建议，绑定生成时的画像版本。
+      required: [id, searchRunId, jobProfileId, jobProfileVersionId, suggestedSearchCondition, addedKeywords, droppedKeywords, reasoning, analysisSnapshot, provider, model, promptVersion, agentVersion, createdAt]
+      properties:
+        id:
+          type: string
+        searchRunId:
+          type: string
+        jobProfileId:
+          type: string
+        jobProfileVersionId:
+          type: string
+        suggestedSearchCondition:
+          type: object
+        addedKeywords:
+          type: array
+          items:
+            type: string
+        droppedKeywords:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+        analysisSnapshot:
+          type: object
+          required: [recommendedCount, eliminatedCount, recommendedTraits, eliminatedTraits]
+          properties:
+            recommendedCount:
+              type: integer
+            eliminatedCount:
+              type: integer
+            recommendedTraits:
+              type: array
+              items:
+                type: string
+            eliminatedTraits:
+              type: array
+              items:
+                type: string
+        provider:
+          type: string
+        model:
+          type: string
+        promptVersion:
+          type: string
+        agentVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ClarificationInterviewSession:
+      type: object
+      description: 澄清访谈会话。turns 内嵌每轮 AI 调用元数据即审计；进行中含 currentQuestion，完成后含 draftOutput。
+      required: [id, jobProfileId, status, currentTopicIndex, turns, provider, model, promptVersion, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        jobProfileId:
+          type: string
+        createdByUserId:
+          type: string
+        status:
+          type: string
+          enum: [InProgress, Completed, Abandoned]
+        currentTopicIndex:
+          type: integer
+        turns:
+          type: array
+          items:
+            type: object
+            required: [topicKey, question, suggestedAnswer, askedAt, ai]
+            properties:
+              topicKey:
+                type: string
+                enum: [role-purpose, hard-gates, vital-skills, negative-signals, target-companies, search-keywords, soft-preferences]
+              question:
+                type: string
+              suggestedAnswer:
+                type: string
+              answer:
+                type: string
+              askedAt:
+                type: string
+                format: date-time
+              answeredAt:
+                type: string
+                format: date-time
+              ai:
+                type: object
+                required: [provider, model, promptVersion, agentVersion, durationMs]
+                properties:
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                  promptVersion:
+                    type: string
+                  agentVersion:
+                    type: string
+                  graphVersion:
+                    type: string
+                  durationMs:
+                    type: integer
+        currentQuestion:
+          type: object
+          required: [topicKey, question, suggestedAnswer]
+          properties:
+            topicKey:
+              type: string
+            question:
+              type: string
+            suggestedAnswer:
+              type: string
+        draftOutput:
+          type: object
+          required: [jdText, hardRequirementNotes, softRequirements, negativeSignals, searchKeywords]
+          properties:
+            jdText:
+              type: string
+            hardRequirementNotes:
+              type: array
+              items:
+                type: string
+            softRequirements:
+              type: array
+              items:
+                type: object
+            negativeSignals:
+              type: array
+              items:
+                type: string
+            searchKeywords:
+              type: array
+              items:
+                type: string
+        provider:
+          type: string
+        model:
+          type: string
+        promptVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    FunnelCounts:
+      type: object
+      description: 寻访漏斗计数：原始提交→去重→硬筛→评估→推荐结论分布。
+      required: [rawSubmitted, deduplicated, hardPassed, hardRejected, assessed, recommended, pending, notRecommended]
+      properties:
+        rawSubmitted:
+          type: integer
+        deduplicated:
+          type: integer
+        hardPassed:
+          type: integer
+        hardRejected:
+          type: integer
+        assessed:
+          type: integer
+        recommended:
+          type: integer
+        pending:
+          type: integer
+        notRecommended:
+          type: integer
     JobProfile:
       type: object
       required: [id, title, jdText, status, searchCondition, hardRequirements, softRequirements]
@@ -565,6 +1009,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号：命中即提示风险的简历特征描述，供匹配评估风险点逐条对照。
+          items:
+            type: string
         confirmedAt:
           type: string
           format: date-time
@@ -592,6 +1041,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号：命中即提示风险的简历特征描述。
+          items:
+            type: string
         status:
           type: string
           enum: [Draft, Confirmed]
@@ -619,6 +1073,11 @@ components:
           type: array
           items:
             type: object
+        negativeSignals:
+          type: array
+          description: 排除信号，可省略，默认空数组。
+          items:
+            type: string
     CandidateDraft:
       type: object
       required: [fingerprint, resume, intent, activityLevel, sourceLead]

@@ -66,6 +66,7 @@ export function createConfirmedJobProfile(): JobProfile {
         description: "能理解客户业务和组织需求。",
       },
     ],
+    negativeSignals: [],
   };
 }
 

@@ -18,6 +18,10 @@
 - 前端共享组件迁移到统一类型契约（`web/src/lib/api-types.ts`）并接回工作台；画像详情、寻访确认、寻访任务列表、硬筛配置查看已接线。
 - 生产错误日志：`setErrorHandler` 未捕获异常分支向 stderr 输出一行结构化 JSON 日志（`method`、`path`、`params`、`errorName`、`errorMessage`、`stack`）；DomainError 422 分支不受影响。
 - 插件提交限流：新增 `RateLimiter` 端口，提供 `InMemoryRateLimiter` 和基于 `INCR`/`PTTL`/`PEXPIRE` 的 `RedisRateLimiter`。候选人提交与附件上传按 Plugin Token + SearchRun 限流，超限返回 `429 RateLimited`、`retryAfterSeconds` 和 `Retry-After`；阈值可经 `PLUGIN_CANDIDATE_RATE_LIMIT`、`PLUGIN_ATTACHMENT_RATE_LIMIT`、`PLUGIN_RATE_LIMIT_WINDOW_SECONDS` 调整。
+- 排除信号进 AI 评估契约：`negativeSignals` 与 `verificationHint` 随画像版本流转；评估 prompt 升级至 v2，命中排除信号会进入风险点并影响 mock 评估结果。
+- 寻访报告：新增 SearchRun 级与 JobProfile 级只读报告，以及工作台折叠面板。
+- 澄清访谈 Agent：新增七组固定话题的持久化访谈会话、画像草稿和 mock/LangGraph provider。
+- 搜索词迭代闭环：Completed SearchRun 可手动比较推荐组与淘汰组，持久化搜索条件建议、审计调用并从工作台预填草稿版本。
 
 ## 文档
 
@@ -42,3 +46,4 @@
 
 - 部署前集成验证：在真实 PostgreSQL + Redis + API + Worker 上跑通完整链路——migration、Web/Plugin 登录、mock 一次性寻访（经 BullMQ 队列 + Worker 异步处理）、硬筛淘汰/通过分流、AI 评估（mock provider）、AI 审计查询、候选人汇总、重新评估、插件 SearchRun 创建、插件候选人批量提交、附件上传与下载、SearchRun 取消，全部通过。
 - 限流自动化测试：`tests/rate-limiter.test.ts` 验证内存与 Redis 限流器计数逻辑，`tests/api.test.ts` 验证 429 响应与错误日志；`RedisRateLimiter` 仍待真实 Redis smoke 验证，风险记录见 `docs/50-todo.md`。
+- 合并验证：`npm run typecheck`、`npm run web:typecheck`、`npm run prisma:validate`、`npm test`（121 项）和 `npm run web:build` 均通过；三项新增 migration 待部署环境以 `prisma migrate deploy` 复核。

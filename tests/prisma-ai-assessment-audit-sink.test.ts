@@ -39,6 +39,7 @@ test("PrismaAIAssessmentAuditSink writes audit snapshots", async () => {
         },
         hardRequirements: [],
         softRequirements: [],
+        negativeSignals: [],
       },
       candidates: [],
     },

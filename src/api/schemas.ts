@@ -90,6 +90,7 @@ export const softRequirementSchema = z.object({
   label: nonEmptyString,
   weight: z.number().min(0),
   description: nonEmptyString,
+  verificationHint: nonEmptyString.optional(),
 });
 
 export const jobProfileSchema = z.object({
@@ -102,6 +103,7 @@ export const jobProfileSchema = z.object({
   searchCondition: searchConditionSchema,
   hardRequirements: z.array(hardRequirementSchema).min(1),
   softRequirements: z.array(softRequirementSchema).min(1),
+  negativeSignals: stringList.default([]),
   confirmedAt: optionalDate,
 });
 
@@ -189,12 +191,17 @@ export const resumeAttachmentUploadSchema = z.object({
   contentBase64: nonEmptyString,
 });
 
+export const interviewAnswerRequestSchema = z.object({
+  answer: nonEmptyString,
+});
+
 export const jobProfileVersionDraftRequestSchema = z.object({
   title: nonEmptyString,
   jdText: nonEmptyString,
   searchCondition: searchConditionSchema,
   hardRequirements: z.array(hardRequirementSchema).min(1),
   softRequirements: z.array(softRequirementSchema).min(1),
+  negativeSignals: stringList.default([]),
 });
 
 export function formatZodError(error: z.ZodError): Array<{ path: string; message: string }> {

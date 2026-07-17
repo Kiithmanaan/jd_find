@@ -7,6 +7,12 @@ import type {
   SearchRun,
   User,
 } from "../../domain/types.js";
+import type {
+  ClarificationInterviewSession,
+  InterviewDraftOutput,
+  InterviewTurn,
+} from "../../domain/clarification-interview.js";
+import type { SearchRefinementSuggestion } from "../../domain/search-refinement-contract.js";
 
 export type UserPersistenceRecord = {
   id: string;
@@ -26,6 +32,7 @@ export type JobProfilePersistenceRecord = {
   searchCondition: Prisma.JsonValue;
   hardRequirements: Prisma.JsonValue;
   softRequirements: Prisma.JsonValue;
+  negativeSignals: Prisma.JsonValue;
   confirmedAt: Date | null;
 };
 
@@ -38,6 +45,7 @@ export type JobProfileVersionPersistenceRecord = {
   searchCondition: Prisma.JsonValue;
   hardRequirements: Prisma.JsonValue;
   softRequirements: Prisma.JsonValue;
+  negativeSignals: Prisma.JsonValue;
   status: JobProfileVersion["status"];
   createdAt: Date;
   confirmedAt: Date | null;
@@ -122,6 +130,7 @@ export function toJobProfileCreateInput(jobProfile: JobProfile): Prisma.JobProfi
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
+    negativeSignals: toJsonInput(jobProfile.negativeSignals),
     confirmedAt: jobProfile.confirmedAt ?? null,
   };
 }
@@ -136,6 +145,7 @@ export function toJobProfileUpdateInput(jobProfile: JobProfile): Prisma.JobProfi
     searchCondition: toJsonInput(jobProfile.searchCondition),
     hardRequirements: toJsonInput(jobProfile.hardRequirements),
     softRequirements: toJsonInput(jobProfile.softRequirements),
+    negativeSignals: toJsonInput(jobProfile.negativeSignals),
     confirmedAt: jobProfile.confirmedAt ?? null,
   };
 }
@@ -151,6 +161,7 @@ export function toJobProfileDomain(record: JobProfilePersistenceRecord): JobProf
     searchCondition: record.searchCondition as unknown as JobProfile["searchCondition"],
     hardRequirements: record.hardRequirements as unknown as JobProfile["hardRequirements"],
     softRequirements: record.softRequirements as unknown as JobProfile["softRequirements"],
+    negativeSignals: reviveNegativeSignals(record.negativeSignals),
     confirmedAt: record.confirmedAt ?? undefined,
   };
 }
@@ -171,6 +182,7 @@ export function toJobProfileVersionCreateInput(
     searchCondition: toJsonInput(version.searchCondition),
     hardRequirements: toJsonInput(version.hardRequirements),
     softRequirements: toJsonInput(version.softRequirements),
+    negativeSignals: toJsonInput(version.negativeSignals),
     status: version.status,
     createdAt: version.createdAt,
     confirmedAt: version.confirmedAt ?? null,
@@ -187,6 +199,7 @@ export function toJobProfileVersionUpdateInput(
     searchCondition: toJsonInput(version.searchCondition),
     hardRequirements: toJsonInput(version.hardRequirements),
     softRequirements: toJsonInput(version.softRequirements),
+    negativeSignals: toJsonInput(version.negativeSignals),
     status: version.status,
     createdAt: version.createdAt,
     confirmedAt: version.confirmedAt ?? null,
@@ -203,10 +216,15 @@ export function toJobProfileVersionDomain(record: JobProfileVersionPersistenceRe
     searchCondition: record.searchCondition as unknown as JobProfileVersion["searchCondition"],
     hardRequirements: record.hardRequirements as unknown as JobProfileVersion["hardRequirements"],
     softRequirements: record.softRequirements as unknown as JobProfileVersion["softRequirements"],
+    negativeSignals: reviveNegativeSignals(record.negativeSignals),
     status: record.status,
     createdAt: record.createdAt,
     confirmedAt: record.confirmedAt ?? undefined,
   };
+}
+
+function reviveNegativeSignals(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? (value as string[]) : [];
 }
 
 export function toSearchRunDomain(record: SearchRunPersistenceRecord): SearchRun {
@@ -364,6 +382,144 @@ function toSearchEventCreateWithoutSearchRunInput(
     occurredAt: event.occurredAt,
     reason: event.reason ?? null,
     metadata: event.metadata ? toJsonInput(event.metadata) : undefined,
+  };
+}
+
+export type ClarificationInterviewSessionPersistenceRecord = {
+  id: string;
+  jobProfileId: string;
+  createdByUserId: string | null;
+  status: ClarificationInterviewSession["status"];
+  currentTopicIndex: number;
+  turns: Prisma.JsonValue;
+  draftOutput: Prisma.JsonValue | null;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+};
+
+export function toClarificationInterviewSessionCreateInput(
+  session: ClarificationInterviewSession,
+): Prisma.ClarificationInterviewSessionRecordCreateInput {
+  return {
+    id: session.id,
+    jobProfile: { connect: { id: session.jobProfileId } },
+    createdByUserId: session.createdByUserId ?? null,
+    status: session.status,
+    currentTopicIndex: session.currentTopicIndex,
+    turns: toJsonInput(session.turns),
+    draftOutput: session.draftOutput ? toJsonInput(session.draftOutput) : undefined,
+    provider: session.provider,
+    model: session.model,
+    promptVersion: session.promptVersion,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    completedAt: session.completedAt ?? null,
+  };
+}
+
+export function toClarificationInterviewSessionUpdateInput(
+  session: ClarificationInterviewSession,
+): Prisma.ClarificationInterviewSessionRecordUpdateInput {
+  return {
+    status: session.status,
+    currentTopicIndex: session.currentTopicIndex,
+    turns: toJsonInput(session.turns),
+    draftOutput: session.draftOutput ? toJsonInput(session.draftOutput) : undefined,
+    provider: session.provider,
+    model: session.model,
+    promptVersion: session.promptVersion,
+    updatedAt: session.updatedAt,
+    completedAt: session.completedAt ?? null,
+  };
+}
+
+export function toClarificationInterviewSessionDomain(
+  record: ClarificationInterviewSessionPersistenceRecord,
+): ClarificationInterviewSession {
+  const turns = (record.turns as unknown as InterviewTurn[]).map((turn) => ({
+    ...turn,
+    askedAt: new Date(turn.askedAt),
+    answeredAt: turn.answeredAt ? new Date(turn.answeredAt) : undefined,
+  }));
+
+  return {
+    id: record.id,
+    jobProfileId: record.jobProfileId,
+    createdByUserId: record.createdByUserId ?? undefined,
+    status: record.status,
+    currentTopicIndex: record.currentTopicIndex,
+    turns,
+    draftOutput: (record.draftOutput as unknown as InterviewDraftOutput | null) ?? undefined,
+    provider: record.provider,
+    model: record.model,
+    promptVersion: record.promptVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    completedAt: record.completedAt ?? undefined,
+  };
+}
+
+export type SearchRefinementSuggestionPersistenceRecord = {
+  id: string;
+  searchRunId: string;
+  jobProfileId: string;
+  jobProfileVersionId: string;
+  suggestedSearchCondition: Prisma.JsonValue;
+  addedKeywords: Prisma.JsonValue;
+  droppedKeywords: Prisma.JsonValue;
+  reasoning: string;
+  analysisSnapshot: Prisma.JsonValue;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  agentVersion: string;
+  createdAt: Date;
+};
+
+export function toSearchRefinementSuggestionCreateInput(
+  suggestion: SearchRefinementSuggestion,
+): Prisma.SearchRefinementSuggestionRecordCreateInput {
+  return {
+    id: suggestion.id,
+    searchRun: { connect: { id: suggestion.searchRunId } },
+    jobProfileId: suggestion.jobProfileId,
+    jobProfileVersionId: suggestion.jobProfileVersionId,
+    suggestedSearchCondition: toJsonInput(suggestion.suggestedSearchCondition),
+    addedKeywords: toJsonInput(suggestion.addedKeywords),
+    droppedKeywords: toJsonInput(suggestion.droppedKeywords),
+    reasoning: suggestion.reasoning,
+    analysisSnapshot: toJsonInput(suggestion.analysisSnapshot),
+    provider: suggestion.provider,
+    model: suggestion.model,
+    promptVersion: suggestion.promptVersion,
+    agentVersion: suggestion.agentVersion,
+    createdAt: suggestion.createdAt,
+  };
+}
+
+export function toSearchRefinementSuggestionDomain(
+  record: SearchRefinementSuggestionPersistenceRecord,
+): SearchRefinementSuggestion {
+  return {
+    id: record.id,
+    searchRunId: record.searchRunId,
+    jobProfileId: record.jobProfileId,
+    jobProfileVersionId: record.jobProfileVersionId,
+    suggestedSearchCondition:
+      record.suggestedSearchCondition as unknown as SearchRefinementSuggestion["suggestedSearchCondition"],
+    addedKeywords: record.addedKeywords as unknown as string[],
+    droppedKeywords: record.droppedKeywords as unknown as string[],
+    reasoning: record.reasoning,
+    analysisSnapshot: record.analysisSnapshot as unknown as SearchRefinementSuggestion["analysisSnapshot"],
+    provider: record.provider,
+    model: record.model,
+    promptVersion: record.promptVersion,
+    agentVersion: record.agentVersion,
+    createdAt: record.createdAt,
   };
 }
 

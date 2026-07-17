@@ -13,6 +13,19 @@ import type {
   PluginCandidateBatch,
   CandidateAssessmentRecord,
 } from "../domain/types.js";
+import type {
+  ClarificationInterviewSession,
+  InterviewDraftOutput,
+  InterviewTurn,
+} from "../domain/clarification-interview.js";
+import type {
+  InterviewQuestionDraft,
+  InterviewTopic,
+} from "../domain/clarification-interview-contract.js";
+import type {
+  SearchRefinementDraft,
+  SearchRefinementSuggestion,
+} from "../domain/search-refinement-contract.js";
 
 export interface SourceAdapter {
   acquireCandidates(jobProfile: JobProfile, searchRun: SearchRun): Promise<{
@@ -135,4 +148,45 @@ export interface RateLimitResult {
 
 export interface RateLimiter {
   consume(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult>;
+}
+
+export interface ClarificationInterviewPort {
+  readonly providerName?: string;
+  readonly modelName?: string;
+  readonly graphVersion?: string;
+
+  nextQuestion(input: {
+    jobProfile: JobProfile;
+    topic: InterviewTopic;
+    turns: InterviewTurn[];
+  }): Promise<InterviewQuestionDraft>;
+
+  produceDraft(input: {
+    jobProfile: JobProfile;
+    turns: InterviewTurn[];
+  }): Promise<InterviewDraftOutput>;
+}
+
+export interface ClarificationInterviewSessionRepository {
+  save(session: ClarificationInterviewSession): Promise<ClarificationInterviewSession>;
+  findById(id: string): Promise<ClarificationInterviewSession | undefined>;
+  findByJobProfileId(jobProfileId: string): Promise<ClarificationInterviewSession[]>;
+}
+
+export interface SearchRefinementPort {
+  readonly providerName?: string;
+  readonly modelName?: string;
+  readonly graphVersion?: string;
+
+  suggestRefinement(input: {
+    jobProfile: JobProfile;
+    recommended: CandidateResult[];
+    eliminated: CandidateResult[];
+  }): Promise<SearchRefinementDraft>;
+}
+
+export interface SearchRefinementSuggestionRepository {
+  save(suggestion: SearchRefinementSuggestion): Promise<SearchRefinementSuggestion>;
+  findBySearchRunId(searchRunId: string): Promise<SearchRefinementSuggestion[]>;
+  findByJobProfileId(jobProfileId: string): Promise<SearchRefinementSuggestion[]>;
 }

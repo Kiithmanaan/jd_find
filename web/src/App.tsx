@@ -6,7 +6,11 @@ import { HardConditionConfigPanel } from "./components/shared/HardConditionConfi
 import { CreateSearchRunDialog } from "./components/shared/CreateSearchRunDialog.js";
 import { SearchRunListPanel, type SearchRunListItem } from "./components/shared/SearchRunListPanel.js";
 import { ProfileDetailPanel } from "./components/shared/ProfileDetailPanel.js";
-import type { JobProfile } from "./lib/api-types.js";
+import { SearchRunReportPanel } from "./components/shared/SearchRunReportPanel.js";
+import { JobProfileReportPanel } from "./components/shared/JobProfileReportPanel.js";
+import { ClarificationInterviewPanel } from "./components/shared/ClarificationInterviewPanel.js";
+import { SearchRefinementPanel } from "./components/shared/SearchRefinementPanel.js";
+import type { ClarificationInterviewSession, JobProfile, SearchRefinementSuggestion } from "./lib/api-types.js";
 
 const columns: ColumnDef<ApiCandidate>[] = [
   { header: "姓名", accessorFn: (row) => row.resume.name },
@@ -26,7 +30,13 @@ export function App(): React.JSX.Element {
   const [showHardConditionConfig, setShowHardConditionConfig] = useState(false);
   const [showSearchRunList, setShowSearchRunList] = useState(false);
   const [showProfileDetail, setShowProfileDetail] = useState(false);
+  const [showRunReport, setShowRunReport] = useState(false);
+  const [showProfileReport, setShowProfileReport] = useState(false);
+  const [showInterview, setShowInterview] = useState(false);
+  const [showRefinement, setShowRefinement] = useState(false);
+  const [interviewSession, setInterviewSession] = useState<ClarificationInterviewSession | undefined>(undefined);
   const [createRunDialogOpen, setCreateRunDialogOpen] = useState(false);
+  const [draftSignalsText, setDraftSignalsText] = useState("");
   const hardConditionConfig = useQuery({
     queryKey: ["hard-condition-config"],
     queryFn: () => realApi.hardConditionConfig(),
@@ -37,12 +47,15 @@ export function App(): React.JSX.Element {
   const run = useQuery({ queryKey: ["run", runId], queryFn: () => realApi.run(runId), enabled: authenticated && Boolean(runId), refetchInterval: (q) => ["Completed", "Failed", "Cancelled", "Interrupted"].includes(q.state.data?.status ?? "") ? false : 3000 });
   const candidates = useQuery({ queryKey: ["candidates", profileId], queryFn: () => realApi.candidates(profileId), enabled: authenticated && Boolean(profileId) });
   const audits = useQuery({ queryKey: ["audits", runId], queryFn: () => realApi.audits(runId), enabled: authenticated && Boolean(runId) });
+  const runReport = useQuery({ queryKey: ["run-report", runId], queryFn: () => realApi.runReport(runId), enabled: authenticated && Boolean(runId) && showRunReport });
+  const profileReport = useQuery({ queryKey: ["profile-report", profileId], queryFn: () => realApi.profileReport(profileId), enabled: authenticated && Boolean(profileId) && showProfileReport });
   const confirmedVersion = versions.data?.versions.find((item) => item.id === versions.data?.currentVersionId && item.status === "Confirmed");
   /** 目前没有单独的 GET JobProfile 端点，画像内容借当前确认版本合成展示用；与 createRun 请求体的合成方式保持一致。 */
   const syntheticProfile: JobProfile | undefined = confirmedVersion && {
     id: profileId, title: confirmedVersion.title, jdText: confirmedVersion.jdText, status: "Confirmed",
     currentVersionId: confirmedVersion.id, searchCondition: confirmedVersion.searchCondition,
     hardRequirements: confirmedVersion.hardRequirements, softRequirements: confirmedVersion.softRequirements,
+    negativeSignals: confirmedVersion.negativeSignals,
   };
   const createRun = useMutation({ mutationFn: async (targetResultCount: number) => {
     if (!confirmedVersion) throw new Error("未找到当前已确认画像版本。");
@@ -53,15 +66,36 @@ export function App(): React.JSX.Element {
   const createDraft = useMutation({ mutationFn: async () => {
     const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
     if (!source) throw new Error("未找到可复制的当前版本。");
-    return realApi.createDraft(profileId, source);
+    const editedSignals = draftSignalsText.trim()
+      ? draftSignalsText.split("\n").map((line) => line.trim()).filter(Boolean)
+      : undefined;
+    return realApi.createDraft(profileId, source, editedSignals);
   }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
   const confirmVersion = useMutation({ mutationFn: (versionId: string) => realApi.confirmVersion(profileId, versionId), onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
+  const startInterview = useMutation({ mutationFn: () => realApi.startInterview(profileId), onSuccess: setInterviewSession });
+  const answerInterview = useMutation({ mutationFn: (answer: string) => {
+    if (!interviewSession) throw new Error("访谈会话不存在。");
+    return realApi.answerInterview(interviewSession.id, answer);
+  }, onSuccess: setInterviewSession });
+  const refinements = useQuery({ queryKey: ["refinements", runId], queryFn: () => realApi.refinements(runId), enabled: authenticated && Boolean(runId) && showRefinement });
+  const generateRefinement = useMutation({ mutationFn: () => realApi.generateRefinement(runId), onSuccess: () => client.invalidateQueries({ queryKey: ["refinements", runId] }) });
+  const applyRefinement = useMutation({ mutationFn: async (suggestion: SearchRefinementSuggestion) => {
+    const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
+    if (!source) throw new Error("未找到当前已确认画像版本。");
+    return realApi.createDraftFromRefinement(profileId, source, suggestion);
+  }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
+  const applyInterviewDraft = useMutation({ mutationFn: async (session: ClarificationInterviewSession) => {
+    const source = versions.data?.versions.find((item) => item.id === versions.data.currentVersionId);
+    const draft = session.draftOutput;
+    if (!source || !draft) throw new Error("缺少当前版本或访谈草稿。");
+    return realApi.createDraftFromInterview(profileId, source, draft);
+  }, onSuccess: () => client.invalidateQueries({ queryKey: ["versions", profileId] }) });
   const rows = candidates.data?.currentVersionCandidates ?? run.data?.candidates ?? [];
   const searchRunListItems: SearchRunListItem[] = run.data
     ? [{ ...run.data, jobProfileTitle: confirmedVersion?.title ?? run.data.jobProfileId }]
     : [];
   const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel() });
-  const error = login.error ?? versions.error ?? run.error ?? candidates.error ?? createRun.error ?? cancel.error ?? reassess.error;
+  const error = login.error ?? versions.error ?? run.error ?? candidates.error ?? createRun.error ?? cancel.error ?? reassess.error ?? createDraft.error ?? confirmVersion.error;
 
   if (!authenticated) return <main className="mx-auto max-w-md p-8"><h1 className="mb-6 text-2xl font-semibold">JD Search 登录</h1><input className="mb-3 w-full rounded border p-2" placeholder="邮箱" value={email} onChange={(e) => setEmail(e.target.value)} /><input className="mb-3 w-full rounded border p-2" type="password" placeholder="密码" value={password} onChange={(e) => setPassword(e.target.value)} /><button className="rounded bg-black px-4 py-2 text-white" onClick={() => login.mutate()} disabled={login.isPending}>登录</button>{login.error && <p className="mt-3 text-red-600">{login.error.message}</p>}</main>;
 
@@ -74,7 +108,7 @@ export function App(): React.JSX.Element {
       onConfirm={async (targetResultCount) => { await createRun.mutateAsync(targetResultCount); }}
     />}
     {error && <p className="mb-4 rounded bg-red-50 p-3 text-red-700">{error.message}</p>}
-    <section className="mb-5 grid gap-3 md:grid-cols-3"><div className="rounded border p-4"><div className="flex justify-between"><span className="text-sm text-gray-500">画像版本</span><button className="text-sm underline" disabled={!versions.data} onClick={() => createDraft.mutate()}>复制当前为草稿</button></div><div className="mt-2 space-y-1">{versions.data?.versions.map((version) => <div className="flex justify-between" key={version.id}><span>v{version.version} · {version.status}</span>{version.status === "Draft" && <button className="text-sm text-blue-600" onClick={() => confirmVersion.mutate(version.id)}>确认</button>}</div>) ?? <span className="text-xl">0</span>}</div></div><div className="rounded border p-4"><div className="text-sm text-gray-500">任务状态</div><div className="text-xl">{run.data?.status ?? "-"}</div></div><div className="rounded border p-4"><div className="text-sm text-gray-500">AI 审计</div><div className="text-xl">{audits.data?.records.length ?? 0}</div></div></section>
+    <section className="mb-5 grid gap-3 md:grid-cols-3"><div className="rounded border p-4"><div className="flex justify-between"><span className="text-sm text-gray-500">画像版本</span><button className="text-sm underline" disabled={!versions.data} onClick={() => createDraft.mutate()}>复制当前为草稿</button></div><div className="mt-2 space-y-1">{versions.data?.versions.map((version) => <div className="flex justify-between" key={version.id}><span>v{version.version} · {version.status}</span>{version.status === "Draft" && <button className="text-sm text-blue-600" onClick={() => confirmVersion.mutate(version.id)}>确认</button>}</div>) ?? <span className="text-xl">0</span>}</div><label className="mt-3 block text-xs text-gray-500">排除信号（每行一条，留空则沿用当前版本，随「复制当前为草稿」保存）<textarea className="mt-1 w-full rounded border p-2 text-sm" rows={3} placeholder={confirmedVersion?.negativeSignals.join("\n") || "例如：频繁跳槽"} value={draftSignalsText} onChange={(e) => setDraftSignalsText(e.target.value)} /></label></div><div className="rounded border p-4"><div className="text-sm text-gray-500">任务状态</div><div className="text-xl">{run.data?.status ?? "-"}</div></div><div className="rounded border p-4"><div className="text-sm text-gray-500">AI 审计</div><div className="text-xl">{audits.data?.records.length ?? 0}</div></div></section>
     <div className="overflow-auto rounded border"><table className="w-full text-left text-sm"><thead className="bg-gray-50">{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th className="p-3" key={header.id}>{flexRender(header.column.columnDef.header, header.getContext())}</th>)}</tr>)}</thead><tbody>{table.getRowModel().rows.map((row) => <tr className="border-t" key={row.id}>{row.getVisibleCells().map((cell) => <td className="p-3" key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table>{rows.length === 0 && <p className="p-6 text-center text-gray-500">暂无候选人</p>}</div>
     <section className="mt-5">
       <button className="text-sm underline" onClick={() => setShowHardConditionConfig((v) => !v)}>
@@ -98,6 +132,63 @@ export function App(): React.JSX.Element {
           searchRuns={searchRunListItems}
           onSelectRun={setRunId}
           onNavigateToProfiles={() => setRunId("")}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!profileId} onClick={() => setShowInterview((v) => !v)}>
+        {showInterview ? "隐藏澄清访谈" : "澄清访谈（画像梳理）"}
+      </button>
+      {showInterview && <div className="mt-3 rounded border p-4">
+        <ClarificationInterviewPanel
+          session={interviewSession}
+          starting={startInterview.isPending}
+          answering={answerInterview.isPending}
+          error={(startInterview.error ?? answerInterview.error ?? applyInterviewDraft.error)?.message}
+          onStart={() => startInterview.mutate()}
+          onAnswer={(answer) => answerInterview.mutate(answer)}
+          onApplyDraft={(session) => applyInterviewDraft.mutate(session)}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!runId} onClick={() => setShowRunReport((v) => !v)}>
+        {showRunReport ? "隐藏寻访报告" : "查看寻访报告"}
+      </button>
+      {showRunReport && <div className="mt-3 rounded border p-4">
+        <SearchRunReportPanel
+          report={runReport.data}
+          loading={runReport.isLoading}
+          error={runReport.error?.message}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!runId} onClick={() => setShowRefinement((v) => !v)}>
+        {showRefinement ? "隐藏搜索词迭代建议" : "搜索词迭代建议"}
+      </button>
+      {showRefinement && <div className="mt-3 rounded border p-4">
+        <SearchRefinementPanel
+          suggestions={refinements.data?.suggestions ?? []}
+          currentVersionId={versions.data?.currentVersionId}
+          loading={refinements.isLoading}
+          generating={generateRefinement.isPending}
+          applying={applyRefinement.isPending}
+          error={(generateRefinement.error ?? applyRefinement.error ?? refinements.error)?.message}
+          onGenerate={() => generateRefinement.mutate()}
+          onApply={(suggestion) => applyRefinement.mutate(suggestion)}
+        />
+      </div>}
+    </section>
+    <section className="mt-5">
+      <button className="text-sm underline" disabled={!profileId} onClick={() => setShowProfileReport((v) => !v)}>
+        {showProfileReport ? "隐藏画像汇总报告" : "查看画像汇总报告"}
+      </button>
+      {showProfileReport && <div className="mt-3 rounded border p-4">
+        <JobProfileReportPanel
+          report={profileReport.data}
+          loading={profileReport.isLoading}
+          error={profileReport.error?.message}
         />
       </div>}
     </section>

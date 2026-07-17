@@ -115,12 +115,52 @@
 - 每条条件必须可验证、可执行。
 - 抽象标签必须转为行为或证据描述。
 
+## 5.1 澄清访谈 Agent（逼问式画像梳理）
+
+定位：
+
+- 多轮问答把"想招什么人"从模糊说法逼问成可执行的画像草稿。
+- 一次只问一个问题；每个问题必须附一条具体的推荐答案（`suggestedAnswer`），让用户确认或纠正。
+- 模糊词（资深、能力强等）必须逼问成可判断的标准。
+- AI 只产出草稿建议，画像确认仍必须由用户动作触发。
+
+七组固定话题（顺序有依赖关系，不可乱序）：
+
+1. `role-purpose` 岗位存在意义
+2. `hard-gates` 硬门槛
+3. `vital-skills` 命脉技能与验证方式
+4. `negative-signals` 排除信号
+5. `target-companies` 目标公司与人才来源
+6. `search-keywords` 搜索关键词与渠道
+7. `soft-preferences` 软性偏好与加分项
+
+会话与产出：
+
+- 会话持久化，状态为 `InProgress`、`Completed`、`Abandoned`。
+- 每轮问答记录 `InterviewTurn`，内嵌该轮 AI 调用元数据（provider、model、prompt version、agent version、graph version、耗时），即本 Agent 的审计载体；不写入 `AIAssessmentAuditRecord`（该表要求关联 SearchRun）。
+- 全部话题回答完毕后产出画像草稿 `draftOutput`：
+  - `jdText`：JD 文本。
+  - `hardRequirementNotes`：硬性条件文本建议（不生成结构化规则，结构化配置仍由用户在硬筛配置中完成）。
+  - `softRequirements`：软性条件（尽量附 `verificationHint`）。
+  - `negativeSignals`：排除信号。
+  - `searchKeywords`：搜索关键词，至少 1 个。
+- 草稿应用走既有 `POST /api/job-profiles/:id/versions/draft`，由前端预填、用户确认。
+
+版本口径：
+
+- prompt version：`clarification-interview-v1`。
+- agent version：`jd-clarification-interview-v1`。
+- LangGraph graph version：`clarification-interview-graph-v1`。
+- Provider 默认 `mock`，可切换 `langgraph-openai`（env：`CLARIFICATION_INTERVIEW_PROVIDER` 等）。
+
 ## 6. 匹配 Agent
 
 输入：
 
 - `JobProfileVersion`。
 - 软性匹配 prompt。
+- 排除信号：画像中命中即提示风险的简历特征描述（`negativeSignals`，可为空）。
+- 软性条件的验证方式提示（`SoftRequirement.verificationHint`，可选）：说明看简历中什么信号才算真正满足该条件。
 - 硬筛通过候选人。
 - 候选人简历摘要、来源线索、意向、活跃度。
 
@@ -152,8 +192,8 @@
   "trace": "string",
   "assessedAt": "2026-06-06T00:00:00.000Z",
   "jobProfileVersionId": "string",
-  "promptVersion": "match-assessment-v1",
-  "agentVersion": "jd-match-assessment-v1"
+  "promptVersion": "match-assessment-v2",
+  "agentVersion": "jd-match-assessment-v2"
 }
 ```
 
@@ -164,6 +204,60 @@
 - `matchedPoints`、`unmatchedPoints`、`riskPoints` 每类最多 3 条。
 - `trace` 必须能关联岗位画像、软性 prompt 和候选人证据。
 - 硬筛淘汰候选人不得进入匹配 Agent。
+
+排除信号对照规则：
+
+- 画像配置了 `negativeSignals` 时，匹配 Agent 必须逐条对照候选人简历。
+- 命中的排除信号优先写入 `riskPoints`，每条注明命中的信号。
+- `riskPoints` 上限仍为 3 条：命中信号超过 3 条时按严重程度截断，截断是预期口径。
+- 排除信号命中不强制改变推荐结论，但必须在 `recommendationReason` 或 `trace` 中说明影响。
+
+prompt version 迁移说明：
+
+- `match-assessment-v1`：不含排除信号与验证方式提示的初版契约。
+- `match-assessment-v2`：输入增加 `negativeSignals` 与 `verificationHint`，输出要求风险点逐条对照排除信号。
+- 历史审计记录保留 v1 标识，与 v2 记录并存，属预期行为，用于区分两代评估口径。
+- HTTP AI Adapter 的外部服务需同步接受请求体中新增的 `negativeSignals` 与 `softRequirements[].verificationHint` 字段。
+
+## 6.1 搜索词迭代 Agent（search-refinement）
+
+定位：
+
+- SearchRun 完成后，对比"推荐"候选人与被淘汰候选人（硬筛淘汰 ∪ 不推荐）的简历特征，产出下一轮寻访的搜索条件建议。
+- 第一阶段由用户手动触发，HTTP 同步执行，同一 SearchRun 同时只允许一个分析（409）。
+- "待定"候选人不参与对比。
+- 推荐组为空时也必须产出结论（当前关键词可能过宽或过窄），不视为失败。
+
+输入：
+
+- `JobProfile`（当前搜索条件、排除信号）。
+- 推荐组候选人简历。
+- 淘汰组候选人简历与硬筛淘汰原因。
+
+输出契约：
+
+```json
+{
+  "suggestedSearchCondition": { "keywords": ["string"], "cities": [], "industries": [], "educationLevels": [] },
+  "addedKeywords": ["string"],
+  "droppedKeywords": ["string"],
+  "reasoning": "string"
+}
+```
+
+校验规则：
+
+- `reasoning` 必填，必须引用具体特征证据。
+- `suggestedSearchCondition.keywords` 至少 1 个。
+- `addedKeywords` / `droppedKeywords` 允许为空数组。
+
+持久化与审计：
+
+- 建议落库 `SearchRefinementSuggestionRecord`，绑定 `searchRunId` 与 `jobProfileVersionId`，一个 run 可多次生成、保留历史。
+- 审计写入 `AIAssessmentAuditRecord`，`agentType` 为 `search-refinement`；失败调用也保留输入快照与 prompt。
+- prompt version：`search-refinement-v1`；agent version：`jd-search-refinement-v1`；graph version：`search-refinement-graph-v1`。
+- Provider 默认 `mock`（确定性词频启发式，本身即可用 baseline），可切换 `langgraph-openai`（env：`SEARCH_REFINEMENT_PROVIDER` 等）。
+- 建议应用走既有草稿版本创建端点，由前端预填、用户确认，AI 不直接修改画像。
 
 ## 7. 关键信息检查
 

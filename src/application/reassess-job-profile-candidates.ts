@@ -1,6 +1,7 @@
 import {
   MATCH_ASSESSMENT_AGENT_VERSION,
   MATCH_ASSESSMENT_PROMPT_VERSION,
+  createMatchAssessmentPrompt,
   normalizeAIAssessments,
 } from "../domain/ai-assessment-contract.js";
 import { summarizeJobProfileCandidates } from "../domain/candidate-summary.js";
@@ -135,7 +136,7 @@ async function recordReassessmentAudit(
     promptVersion: MATCH_ASSESSMENT_PROMPT_VERSION,
     agentVersion: MATCH_ASSESSMENT_AGENT_VERSION,
     graphVersion: dependencies.aiAssessment.graphVersion,
-    prompt: createMatchAssessmentPrompt(jobProfile, candidates),
+    prompt: createMatchAssessmentPrompt(jobProfile, candidates.map((candidate) => candidate.id)),
     candidateIds: candidates.map((candidate) => candidate.id),
     inputSnapshot: {
       jobProfile: {
@@ -144,6 +145,7 @@ async function recordReassessmentAudit(
         searchCondition: jobProfile.searchCondition,
         hardRequirements: jobProfile.hardRequirements,
         softRequirements: jobProfile.softRequirements,
+        negativeSignals: jobProfile.negativeSignals,
       },
       candidates: candidates.map((candidate) => ({
         id: candidate.id,
@@ -160,17 +162,4 @@ async function recordReassessmentAudit(
     createdAt: new Date(),
   });
   return auditId;
-}
-
-function createMatchAssessmentPrompt(jobProfile: JobProfile, candidates: CandidateResult[]): string {
-  return JSON.stringify({
-    task: "match-assessment",
-    jobProfileVersionId: jobProfile.currentVersionId,
-    jobProfile: {
-      title: jobProfile.title,
-      hardRequirements: jobProfile.hardRequirements,
-      softRequirements: jobProfile.softRequirements,
-    },
-    candidateIds: candidates.map((candidate) => candidate.id),
-  });
 }

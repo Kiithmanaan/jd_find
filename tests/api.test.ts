@@ -171,6 +171,240 @@ test("API 查询不存在 SearchRun 的 AI 评估审计返回 404", async () => 
   assert.equal(response.json().error, "SearchRunNotFound");
 });
 
+test("API 返回 SearchRun 级与 JobProfile 级寻访报告", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const searchRunQueue = new InMemorySearchRunQueue();
+  const app = createApp({ idGenerator: () => "api-run-report", searchRuns, searchRunQueue });
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      targetResultCount: 10,
+      candidates: createCandidateDrafts(),
+    },
+  });
+  const queuedJob = searchRunQueue.findJobById(response.json().jobId);
+  assert.ok(queuedJob);
+
+  const handler = new SearchRunJobHandler({
+    aiAssessment: new MockAIAssessment(),
+    searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
+  });
+  await handler.handleOneTimeSearch(queuedJob);
+
+  const runReport = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-report/report",
+  });
+  assert.equal(runReport.statusCode, 200);
+  const runBody = runReport.json();
+  assert.equal(runBody.searchRunId, "api-run-report");
+  assert.equal(runBody.status, "Completed");
+  assert.equal(runBody.funnel.rawSubmitted, 4);
+  assert.equal(runBody.funnel.deduplicated, 3);
+  assert.equal(runBody.funnel.hardPassed, 2);
+  assert.equal(runBody.funnel.hardRejected, 1);
+  assert.equal(runBody.funnel.assessed, 2);
+  assert.equal(runBody.funnel.recommended, 1);
+  assert.equal(runBody.funnel.pending, 1);
+  assert.equal(runBody.topCandidates.length, 2);
+  assert.equal(runBody.topCandidates[0].matchAssessment.recommendation, "推荐");
+  assert.equal(runBody.pendingCandidates.length, 1);
+  assert.equal(runBody.pendingCandidates[0].matchAssessment.recommendation, "待定");
+
+  const profileReport = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/report",
+  });
+  assert.equal(profileReport.statusCode, 200);
+  const profileBody = profileReport.json();
+  assert.equal(profileBody.jobProfileId, "job-1");
+  assert.equal(profileBody.currentVersionId, "job-1-v1");
+  assert.equal(profileBody.totalSearchRuns, 1);
+  assert.equal(profileBody.cumulativeFunnel.rawSubmitted, 4);
+  assert.equal(profileBody.uniqueCandidateCount, 3);
+  assert.deepEqual(profileBody.currentRecommendationDistribution, {
+    recommended: 1,
+    pending: 1,
+    notRecommended: 0,
+    unassessed: 1,
+  });
+  assert.equal(profileBody.runs.length, 1);
+  assert.equal(profileBody.runs[0].searchRunId, "api-run-report");
+});
+
+test("API 支持澄清访谈闭环：发起、逐题回答、完成产出草稿", async () => {
+  const app = createApp({ idGenerator: () => "api-interview-run" });
+  const createRun = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(createRun.statusCode, 202);
+
+  const started = await app.inject({
+    method: "POST",
+    url: "/api/job-profiles/job-1/clarification-interviews",
+  });
+  assert.equal(started.statusCode, 201);
+  const session = started.json();
+  assert.equal(session.status, "InProgress");
+  assert.equal(session.currentQuestion.topicKey, "role-purpose");
+  assert.ok(session.currentQuestion.suggestedAnswer);
+
+  let latest = session;
+  for (let index = 0; index < 7; index += 1) {
+    const answered = await app.inject({
+      method: "POST",
+      url: `/api/clarification-interviews/${session.id}/answers`,
+      payload: { answer: `第${index}轮回答：解决方案；客户成功` },
+    });
+    assert.equal(answered.statusCode, 200);
+    latest = answered.json();
+  }
+
+  assert.equal(latest.status, "Completed");
+  assert.equal(latest.turns.length, 7);
+  assert.equal(latest.currentQuestion, undefined);
+  assert.ok(latest.draftOutput);
+  assert.ok(latest.draftOutput.searchKeywords.length >= 1);
+
+  const fetched = await app.inject({
+    method: "GET",
+    url: `/api/clarification-interviews/${session.id}`,
+  });
+  assert.equal(fetched.statusCode, 200);
+  assert.equal(fetched.json().status, "Completed");
+
+  const listed = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/clarification-interviews",
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.json().sessions.length, 1);
+
+  const extraAnswer = await app.inject({
+    method: "POST",
+    url: `/api/clarification-interviews/${session.id}/answers`,
+    payload: { answer: "已完成后的多余回答" },
+  });
+  assert.equal(extraAnswer.statusCode, 422);
+});
+
+test("API 澄清访谈对不存在资源返回 404", async () => {
+  const app = createApp();
+
+  const started = await app.inject({
+    method: "POST",
+    url: "/api/job-profiles/missing-profile/clarification-interviews",
+  });
+  assert.equal(started.statusCode, 404);
+
+  const answered = await app.inject({
+    method: "POST",
+    url: "/api/clarification-interviews/missing-session/answers",
+    payload: { answer: "回答" },
+  });
+  assert.equal(answered.statusCode, 404);
+});
+
+test("API 支持搜索词迭代分析：生成建议、查询历史、未完成 run 拒绝", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const searchRunQueue = new InMemorySearchRunQueue();
+  const app = createApp({ idGenerator: () => "api-run-refine", searchRuns, searchRunQueue });
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      targetResultCount: 10,
+      candidates: createCandidateDrafts(),
+    },
+  });
+  const queuedJob = searchRunQueue.findJobById(response.json().jobId);
+  assert.ok(queuedJob);
+
+  const early = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(early.statusCode, 404);
+
+  const handler = new SearchRunJobHandler({
+    aiAssessment: new MockAIAssessment(),
+    searchRuns,
+    sourceAdapterFactory: createSourceAdapter,
+  });
+  await handler.handleOneTimeSearch(queuedJob);
+
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(created.statusCode, 201);
+  const suggestion = created.json().suggestion;
+  assert.equal(suggestion.searchRunId, "api-run-refine");
+  assert.ok(suggestion.reasoning);
+  assert.ok(suggestion.suggestedSearchCondition.keywords.length >= 1);
+  assert.equal(suggestion.promptVersion, "search-refinement-v1");
+
+  const listed = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-refine/refinement-suggestions",
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.json().suggestions.length, 1);
+
+  const audits = await app.inject({
+    method: "GET",
+    url: "/api/search-runs/api-run-refine/ai-assessment-audits",
+  });
+  const refinementAudit = audits.json().records.find(
+    (record: { agentType: string }) => record.agentType === "search-refinement",
+  );
+  assert.ok(refinementAudit);
+});
+
+test("API 搜索词迭代分析对 Running 状态返回 422", async () => {
+  const searchRuns = new InMemorySearchRunRepository();
+  const app = createApp({ idGenerator: () => "api-run-refine-running", searchRuns });
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    payload: {
+      jobProfile: createConfirmedJobProfile(),
+      sourceType: "plugin",
+      targetResultCount: 10,
+    },
+  });
+  assert.equal(created.statusCode, 202);
+
+  const refine = await app.inject({
+    method: "POST",
+    url: `/api/search-runs/${created.json().searchRunId}/refinement-suggestions`,
+  });
+  assert.equal(refine.statusCode, 422);
+  assert.equal(refine.json().error, "RefinementNotReady");
+});
+
+test("API 查询不存在资源的寻访报告返回 404", async () => {
+  const app = createApp();
+
+  const runReport = await app.inject({ method: "GET", url: "/api/search-runs/missing-run/report" });
+  assert.equal(runReport.statusCode, 404);
+  assert.equal(runReport.json().error, "SearchRunNotFound");
+
+  const profileReport = await app.inject({ method: "GET", url: "/api/job-profiles/missing-profile/report" });
+  assert.equal(profileReport.statusCode, 404);
+  assert.equal(profileReport.json().error, "JobProfileNotFound");
+});
+
 test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
   const jobProfiles = new InMemoryJobProfileRepository();
   const jobProfileVersions = new InMemoryJobProfileVersionRepository();
@@ -201,11 +435,13 @@ test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
       searchCondition: jobProfile.searchCondition,
       hardRequirements: jobProfile.hardRequirements,
       softRequirements: jobProfile.softRequirements,
+      negativeSignals: ["频繁跳槽"],
     },
   });
   assert.equal(draft.statusCode, 201);
   assert.equal(draft.json().id, "job-1-v2");
   assert.equal(draft.json().status, "Draft");
+  assert.deepEqual(draft.json().negativeSignals, ["频繁跳槽"]);
 
   const confirm = await app.inject({
     method: "POST",
@@ -214,6 +450,7 @@ test("API 支持 JobProfile 版本列表、草稿创建和确认", async () => {
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().jobProfile.currentVersionId, "job-1-v2");
   assert.equal(confirm.json().version.status, "Confirmed");
+  assert.deepEqual(confirm.json().jobProfile.negativeSignals, ["频繁跳槽"]);
 
   const versions = await app.inject({
     method: "GET",
@@ -1200,6 +1437,20 @@ test("Web 用户不能访问其他用户的 JobProfile 版本和汇总", async (
     },
   });
   assert.equal(draft.statusCode, 403);
+
+  const profileReport = await app.inject({
+    method: "GET",
+    url: "/api/job-profiles/job-1/report",
+    headers: otherHeaders,
+  });
+  assert.equal(profileReport.statusCode, 403);
+
+  const runReport = await app.inject({
+    method: "GET",
+    url: `/api/search-runs/${createRun.json().searchRunId}/report`,
+    headers: otherHeaders,
+  });
+  assert.equal(runReport.statusCode, 403);
 });
 
 test("API 查询不存在的 SearchRun 返回 404", async () => {
