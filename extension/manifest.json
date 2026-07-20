@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "jd_find · Boss 候选人抓取",
+  "version": "0.1.0",
+  "description": "在 Boss 直聘搜索/简历页半自动抓取候选人，提交到 jd_find 主工程。",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://*.zhipin.com/*",
+    "http://47.116.191.196/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "jd_find 抓取",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.zhipin.com/*"],
+      "js": ["hook.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://*.zhipin.com/*"],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

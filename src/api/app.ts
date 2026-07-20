@@ -415,6 +415,30 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     },
   );
 
+  // 插件轮询状态（docs/30 §7）。区别于 Web 版 GET /api/search-runs/:id：
+  // 只接受 plugin token，且只返回状态与计数，不暴露候选人明细。
+  app.get<{ Params: { id: string } }>("/api/plugin/search-runs/:id/status", async (request, reply) => {
+    const currentUser = await authenticateRequest(request.headers.authorization, "plugin");
+    if (currentUser.status !== "valid") {
+      return sendAuthFailure(reply, currentUser.status, "Plugin authentication is required.");
+    }
+
+    const searchRun = await searchRuns.findById(request.params.id);
+    if (!searchRun) {
+      return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+    }
+    if (!canAccessSearchRun(searchRun, currentUser)) {
+      return reply.code(403).send({ error: "AuthError", message: "Plugin cannot access this search run." });
+    }
+
+    return reply.code(200).send({
+      id: searchRun.id,
+      status: searchRun.status,
+      rawSubmittedCount: searchRun.rawSubmittedCount,
+      targetResultCount: searchRun.targetResultCount,
+    });
+  });
+
   app.get<{ Params: { id: string } }>("/api/search-runs/:id", async (request, reply) => {
     const currentUser = await authenticateRequest(request.headers.authorization, "web");
     if (authEnabled && currentUser.status !== "valid") {

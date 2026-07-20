@@ -667,6 +667,129 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /plugin/search-runs/{id}/raw-candidates:
+    post:
+      summary: 插件提交来源平台原始响应（服务端解析）
+      description: >-
+        插件上传来源平台原始响应，字段映射与解析在服务端完成（docs/30 §4b）。
+        与 /candidates 并存，二者不得对同一批次同时提交。
+        原始载荷按原样完整留存，不做字段过滤与个人信息最小化。
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RawPluginSubmission"
+      responses:
+        "202":
+          description: 已接受（draftsParsed 为 0 时同样返回 202，但该批次不计入 rawSubmittedCount）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [searchRunId, status, rawSubmittedCount, acceptedCount, candidateCount, parse]
+                properties:
+                  searchRunId:
+                    type: string
+                  status:
+                    $ref: "#/components/schemas/SearchRunStatus"
+                  rawSubmittedCount:
+                    type: integer
+                  acceptedCount:
+                    type: integer
+                  candidateCount:
+                    type: integer
+                  parse:
+                    $ref: "#/components/schemas/RawParseSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+        "409":
+          description: SearchRun 已完成、取消或失败；或同 batchId 提交了不同请求体
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: 请求体超过 8MB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: 超过限流（默认 30 次/60 秒，独立于 /candidates 的桶）
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /plugin/search-runs/{id}/parse-diagnostics:
+    get:
+      summary: 读取服务端解析诊断
+      description: >-
+        返回该 SearchRun 下各批次的解析统计与 keyCensus（原始响应中各字段名出现次数）。
+        来源平台改字段名时，旧字段名计数归零、未识别新字段名满额出现，可直接定位需修改的映射字段。
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 解析诊断列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [diagnostics]
+                properties:
+                  diagnostics:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RawParseDiagnostic"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
+  /plugin/search-runs/{id}/status:
+    get:
+      summary: 插件轮询 SearchRun 状态
+      description: 插件专用状态端点（plugin token）。只返回状态与计数，不暴露候选人明细。区别于 Web 版 GET /search-runs/{id}。
+      parameters:
+        - $ref: "#/components/parameters/SearchRunId"
+      responses:
+        "200":
+          description: 状态与计数
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, rawSubmittedCount, targetResultCount]
+                properties:
+                  id:
+                    type: string
+                  status:
+                    $ref: "#/components/schemas/SearchRunStatus"
+                  rawSubmittedCount:
+                    type: integer
+                  targetResultCount:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "403":
+          $ref: "#/components/responses/AuthError"
+        "404":
+          $ref: "#/components/responses/SearchRunNotFound"
   /plugin/search-runs/{id}/candidates/{candidateId}/resume-attachment:
     post:
       summary: 插件上传候选人简历附件
@@ -1263,6 +1386,92 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/CandidateDraft"
+    RawPluginSubmission:
+      type: object
+      required: [batchId, sourcePlatform, payloads]
+      properties:
+        batchId:
+          type: string
+          description: 同 SearchRun 内幂等键。建议加 raw- 前缀，避免与 /candidates 的 batchId 命名空间碰撞。
+        sourcePlatform:
+          type: string
+          enum: [Boss]
+          description: 必须是服务端映射注册表已知平台，否则 ValidationError。
+        captureVersion:
+          type: string
+          description: 插件版本，用于把解析异常关联到具体插件版本。
+        payloads:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RawCapturePayload"
+    RawCapturePayload:
+      type: object
+      required: [url, matched, json]
+      properties:
+        url:
+          type: string
+          description: 该响应的来源接口地址。
+        matched:
+          type: string
+          enum: [exact, heuristic]
+          description: exact 为命中插件已知接口白名单；heuristic 为启发式规则捕获。服务端据此统计，用于发现来源平台新上线接口。
+        capturedAt:
+          type: string
+          format: date-time
+        json:
+          description: >-
+            原始响应体，服务端不校验其结构——校验结构等于把字段名再次写死进契约。
+            结构安全由深度/条数/键数/字符串长度上限保证。
+    RawParseSummary:
+      type: object
+      required: [mappingVersion, geeksExtracted, draftsParsed, rejected, rejectedReasons]
+      properties:
+        mappingVersion:
+          type: string
+          description: 服务端当前映射版本，插件应展示给用户，便于解析异常时无需发版即可定位。
+        geeksExtracted:
+          type: integer
+        draftsParsed:
+          type: integer
+        rejected:
+          type: integer
+        rejectedReasons:
+          type: object
+          additionalProperties:
+            type: integer
+          description: 各拒绝原因计数，如 missingTitle / missingCity / notAGeek。
+    RawParseDiagnostic:
+      type: object
+      required: [batchId, sourcePlatform, mappingVersion, geeksExtracted, draftsParsed, rejectedCount, keyCensus, createdAt]
+      properties:
+        batchId:
+          type: string
+        sourcePlatform:
+          type: string
+        mappingVersion:
+          type: string
+        captureVersion:
+          type: string
+        geeksExtracted:
+          type: integer
+        draftsParsed:
+          type: integer
+        rejectedCount:
+          type: integer
+        rejectReasonCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        keyCensus:
+          type: object
+          additionalProperties:
+            type: integer
+          description: 原始响应中各字段名的出现次数。仅字段名，不含字段值。
+        createdAt:
+          type: string
+          format: date-time
     ResumeAttachmentUpload:
       type: object
       required: [filename, contentType, contentBase64]

@@ -1,0 +1,79 @@
+#jdfind-panel.jdf-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483647;
+  width: 260px;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.jdf-panel .jdf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #0f766e;
+  color: #fff;
+}
+
+.jdf-panel .jdf-title { font-weight: 600; }
+
+.jdf-panel .jdf-min {
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.jdf-panel .jdf-body { padding: 12px; }
+
+.jdf-panel .jdf-status {
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.jdf-panel .jdf-ok { background: #ecfdf5; color: #047857; }
+.jdf-panel .jdf-warn { background: #fffbeb; color: #b45309; }
+
+.jdf-panel .jdf-count {
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.jdf-panel .jdf-capture {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.jdf-panel .jdf-capture:hover { background: #115e59; }
+
+.jdf-panel .jdf-result {
+  margin-top: 8px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.jdf-panel .jdf-result:empty { display: none; }
+
+.jdf-panel .jdf-hint {
+  margin-top: 10px;
+  color: #9ca3af;
+  font-size: 11px;
+  text-align: center;
+}

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jd_find 抓取</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        width: 300px;
+        margin: 0;
+        padding: 14px;
+        font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        font-size: 13px;
+        color: #1f2937;
+        background: #fff;
+      }
+      h1 { font-size: 14px; margin: 0 0 12px; color: #0f766e; }
+      label { display: block; margin: 8px 0 3px; color: #6b7280; font-size: 12px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 7px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      button {
+        width: 100%;
+        margin-top: 10px;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        background: #0f766e;
+        color: #fff;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.secondary { background: #6b7280; }
+      button:hover { filter: brightness(0.95); }
+      .status { margin: 10px 0; padding: 7px 8px; border-radius: 6px; line-height: 1.4; word-break: break-all; }
+      .ok { background: #ecfdf5; color: #047857; }
+      .warn { background: #fffbeb; color: #b45309; }
+      .row { display: flex; gap: 8px; }
+      .row button { margin-top: 0; }
+      hr { border: none; border-top: 1px solid #f0f0f0; margin: 12px 0; }
+      .hint { color: #9ca3af; font-size: 11px; margin-top: 8px; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>jd_find · Boss 抓取</h1>
+    <div class="status warn" id="status">加载中…</div>
+
+    <div id="login-view">
+      <label for="apiBase">API 地址</label>
+      <input id="apiBase" type="text" placeholder="http://47.116.191.196" />
+      <label for="email">邮箱</label>
+      <input id="email" type="email" placeholder="admin@jd-find.test" />
+      <label for="password">密码</label>
+      <input id="password" type="password" placeholder="••••••••" />
+      <button id="login-btn">登录</button>
+    </div>
+
+    <div id="session-view" class="hidden">
+      <label for="searchRunId">目标 SearchRun ID</label>
+      <input id="searchRunId" type="text" placeholder="在主工程创建 plugin 来源的 SearchRun 后填入" />
+      <div class="row">
+        <button id="save-run-btn">保存 Run</button>
+        <button id="logout-btn" class="secondary">退出</button>
+      </div>
+      <hr />
+      <div class="hint">
+        在主工程创建 <b>sourceType=plugin</b> 的 SearchRun，把它的 ID 填在上面。
+        然后到 Boss 搜索/推荐页，用右下角悬浮面板「抓取本页候选人」。
+      </div>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

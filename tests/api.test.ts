@@ -1540,6 +1540,70 @@ test("API 拒绝非法 SourceLead URL", async () => {
   assert.equal(response.json().error, "ValidationError");
 });
 
+test("插件状态端点用 plugin token 返回状态与计数，且不含候选人明细", async () => {
+  const users = new InMemoryUserRepository([
+    createUser("user-1", "hunter@example.test", "secret"),
+    createUser("user-2", "other@example.test", "secret"),
+  ]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-status",
+    users,
+    searchRuns,
+    jobProfiles,
+    auth: { enabled: true, jwtSecret: "test-secret", webTokenTtlSeconds: 3600, pluginTokenTtlSeconds: 3600 },
+  });
+
+  const webLogin = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+  await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: { authorization: `Bearer ${webLogin.json().token}` },
+    payload: { jobProfile: createConfirmedJobProfile(), sourceType: "plugin", targetResultCount: 10 },
+  });
+
+  const pluginLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  });
+
+  // 带 plugin token → 200，只含状态与计数，无 candidates
+  const status = await app.inject({
+    method: "GET",
+    url: "/api/plugin/search-runs/plugin-run-status/status",
+    headers: { authorization: `Bearer ${pluginLogin.json().token}` },
+  });
+  assert.equal(status.statusCode, 200);
+  const body = status.json();
+  assert.deepEqual(Object.keys(body).sort(), ["id", "rawSubmittedCount", "status", "targetResultCount"]);
+  assert.equal(body.id, "plugin-run-status");
+  assert.equal(body.targetResultCount, 10);
+  assert.equal("candidates" in body, false);
+
+  // 无 token → 401
+  const noToken = await app.inject({ method: "GET", url: "/api/plugin/search-runs/plugin-run-status/status" });
+  assert.equal(noToken.statusCode, 401);
+
+  // 他人的 plugin token → 403
+  const otherLogin = await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: { email: "other@example.test", password: "secret" },
+  });
+  const forbidden = await app.inject({
+    method: "GET",
+    url: "/api/plugin/search-runs/plugin-run-status/status",
+    headers: { authorization: `Bearer ${otherLogin.json().token}` },
+  });
+  assert.equal(forbidden.statusCode, 403);
+});
+
 function createUser(id: string, email: string, password: string): User {
   return {
     id,

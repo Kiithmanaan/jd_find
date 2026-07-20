@@ -1,0 +1,17 @@
+{
+  "name": "jd-find-boss-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Boss 直聘半自动候选人抓取插件（jd_find 主工程配套）",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "@types/chrome": "^0.0.280"
+  }
+}
