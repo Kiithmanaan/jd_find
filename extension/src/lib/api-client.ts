@@ -2,6 +2,8 @@ import type {
   CandidateSubmission,
   LoginResponse,
   PluginErrorCode,
+  RawCandidateSubmission,
+  RawSubmissionResponse,
   SearchRunStatus,
   SubmissionResponse,
 } from "./types.js";
@@ -89,6 +91,17 @@ export function submitCandidates(
 ): Promise<SubmissionResponse> {
   return request<SubmissionResponse>(
     `/api/plugin/search-runs/${encodeURIComponent(searchRunId)}/candidates`,
+    { method: "POST", body: JSON.stringify(submission), auth: true },
+  );
+}
+
+// POST /api/plugin/search-runs/:id/raw-candidates —— 主路径，服务端解析（docs/30 §4b）
+export function submitRawCandidates(
+  searchRunId: string,
+  submission: RawCandidateSubmission,
+): Promise<RawSubmissionResponse> {
+  return request<RawSubmissionResponse>(
+    `/api/plugin/search-runs/${encodeURIComponent(searchRunId)}/raw-candidates`,
     { method: "POST", body: JSON.stringify(submission), auth: true },
   );
 }

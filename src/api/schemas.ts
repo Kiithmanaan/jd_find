@@ -181,6 +181,22 @@ export const pluginCandidateSubmissionSchema = z.object({
   candidates: z.array(candidateDraftSchema).min(1),
 });
 
+// §4b 原始载荷提交：服务端不校验 json 结构（校验结构等于把字段名再次写死进契约）。
+// payloads 数量与请求体大小的上限在路由层处理为 PayloadTooLarge，不在此 schema 里 cap。
+const rawPayloadSchema = z.object({
+  url: nonEmptyString.optional(),
+  matched: z.enum(["exact", "heuristic"]).optional(),
+  capturedAt: z.string().datetime().optional(),
+  json: z.unknown(),
+});
+
+export const pluginRawCandidateSubmissionSchema = z.object({
+  batchId: nonEmptyString,
+  sourcePlatform: nonEmptyString,
+  captureVersion: nonEmptyString.optional(),
+  payloads: z.array(rawPayloadSchema).min(1),
+});
+
 export const resumeAttachmentUploadSchema = z.object({
   filename: nonEmptyString,
   contentType: z.enum([

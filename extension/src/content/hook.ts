@@ -6,7 +6,12 @@
 
 const EVENT_NAME = "jdfind:boss-json";
 
-// Boss 候选人相关响应的 URL 特征（宽松匹配，实际以采样为准；可按真实端点收敛）
+// 已知候选人接口白名单（收敛匹配）→ matched=exact，便于服务端区分并统计。
+const EXACT_URL_PATTERNS = [
+  /\/wapi\/zpgeek\/.*geek.*(list|rec|card)/i,
+  /\/wapi\/zpgeek\/.*recommend/i,
+];
+// 宽松特征 → matched=heuristic，用于发现来源平台新上线接口。
 const CANDIDATE_URL_PATTERNS = [
   /\/wapi\/zpgeek\//i,
   /recommend/i,
@@ -17,12 +22,16 @@ const CANDIDATE_URL_PATTERNS = [
 
 const MAX_BYTES = 2_000_000; // 单条响应体上限，避免转发超大 JSON
 
-function isCandidateUrl(url: string): boolean {
-  return CANDIDATE_URL_PATTERNS.some((re) => re.test(url));
+function classify(url: string): "exact" | "heuristic" | null {
+  if (EXACT_URL_PATTERNS.some((re) => re.test(url))) return "exact";
+  if (CANDIDATE_URL_PATTERNS.some((re) => re.test(url))) return "heuristic";
+  return null;
 }
 
 function forward(url: string, text: string): void {
   if (!text || text.length > MAX_BYTES) return;
+  const matched = classify(url);
+  if (!matched) return;
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -31,11 +40,17 @@ function forward(url: string, text: string): void {
   }
   try {
     window.dispatchEvent(
-      new CustomEvent(EVENT_NAME, { detail: JSON.stringify({ url, json }) }),
+      new CustomEvent(EVENT_NAME, {
+        detail: JSON.stringify({ url, matched, capturedAt: new Date().toISOString(), json }),
+      }),
     );
   } catch {
     /* 忽略序列化失败 */
   }
+}
+
+function isCandidateUrl(url: string): boolean {
+  return classify(url) !== null;
 }
 
 // ---- fetch ----

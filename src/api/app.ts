@@ -10,6 +10,7 @@ import type {
   SearchRunRepository,
   UserRepository,
   PluginCandidateBatchRepository,
+  ParseDiagnosticsRepository,
   AttachmentStorage,
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
@@ -37,6 +38,7 @@ import {
   InMemorySearchRunRepository,
   InMemoryUserRepository,
   InMemoryPluginCandidateBatchRepository,
+  InMemoryParseDiagnosticsRepository,
   InMemoryCandidateAssessmentRepository,
   InMemoryReassessmentLockRepository,
   InMemoryClarificationInterviewSessionRepository,
@@ -59,8 +61,13 @@ import {
   loginRequestSchema,
   oneTimeSearchRequestSchema,
   pluginCandidateSubmissionSchema,
+  pluginRawCandidateSubmissionSchema,
   resumeAttachmentUploadSchema,
 } from "./schemas.js";
+import { getPlatformMapping, knownPlatforms } from "../application/platform-mappings.js";
+import { parseRawPayloads } from "../application/parse-raw-candidates.js";
+import { RawPayloadLimitError } from "../domain/plugin-raw-parsing.js";
+import { createHash } from "node:crypto";
 import {
   ClarificationInterviewService,
   SessionNotFoundError,
@@ -84,6 +91,7 @@ export interface CreateAppOptions {
   users?: UserRepository;
   aiAssessment?: AIAssessmentPort;
   pluginCandidateBatches?: PluginCandidateBatchRepository;
+  parseDiagnostics?: ParseDiagnosticsRepository;
   candidateAssessments?: CandidateAssessmentRepository;
   reassessmentLocks?: ReassessmentLockRepository;
   pluginAggregationQueue?: PluginAggregationQueue;
@@ -102,6 +110,7 @@ export interface CreateAppOptions {
   rateLimiter?: RateLimiter;
   pluginRateLimits?: {
     candidateSubmissionPerWindow?: number;
+    rawSubmissionPerWindow?: number;
     attachmentUploadPerWindow?: number;
     windowSeconds?: number;
   };
@@ -120,6 +129,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const users = options.users ?? new InMemoryUserRepository([]);
   const aiAssessment = options.aiAssessment ?? new MockAIAssessment();
   const pluginCandidateBatches = options.pluginCandidateBatches ?? new InMemoryPluginCandidateBatchRepository();
+  const parseDiagnostics = options.parseDiagnostics ?? new InMemoryParseDiagnosticsRepository();
   const candidateAssessments = options.candidateAssessments ?? new InMemoryCandidateAssessmentRepository();
   const reassessmentLocks = options.reassessmentLocks ?? new InMemoryReassessmentLockRepository();
   const authEnabled = options.auth?.enabled ?? false;
@@ -132,7 +142,10 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const rateLimiter = options.rateLimiter ?? new InMemoryRateLimiter();
   const pluginRateLimitWindowSeconds = options.pluginRateLimits?.windowSeconds ?? 60;
   const pluginCandidateSubmissionRateLimit = options.pluginRateLimits?.candidateSubmissionPerWindow ?? 60;
+  const pluginRawSubmissionRateLimit = options.pluginRateLimits?.rawSubmissionPerWindow ?? 30;
   const pluginAttachmentUploadRateLimit = options.pluginRateLimits?.attachmentUploadPerWindow ?? 30;
+  const maxRawPayloadsPerRequest = 20;
+  const maxRawRequestBodyBytes = 8 * 1024 * 1024;
 
   const clarificationInterviews =
     options.clarificationInterviews ?? new InMemoryClarificationInterviewSessionRepository();
@@ -337,6 +350,161 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       candidateCount: latest?.candidates.length ?? accepted.candidates.length,
     });
   });
+
+  // §4b 原始载荷提交：插件提交来源平台原始响应，解析在服务端完成。
+  app.post<{ Params: { id: string } }>(
+    "/api/plugin/search-runs/:id/raw-candidates",
+    { bodyLimit: maxRawRequestBodyBytes },
+    async (request, reply) => {
+      const currentUser = await authenticateRequest(request.headers.authorization, "plugin");
+      if (currentUser.status !== "valid") {
+        return sendAuthFailure(reply, currentUser.status, "Plugin authentication is required.");
+      }
+
+      const searchRun = await searchRuns.findById(request.params.id);
+      if (!searchRun) {
+        return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+      }
+      if (searchRun.ownerId && searchRun.ownerId !== currentUser.payload.sub) {
+        return reply.code(403).send({ error: "AuthError", message: "Plugin cannot submit to this search run." });
+      }
+
+      const rawRateLimit = await rateLimiter.consume(
+        `raw-candidates:${currentUser.payload.sub}:${searchRun.id}`,
+        pluginRawSubmissionRateLimit,
+        pluginRateLimitWindowSeconds,
+      );
+      if (!rawRateLimit.allowed) {
+        return reply
+          .code(429)
+          .header("Retry-After", String(rawRateLimit.retryAfterSeconds))
+          .send({ error: "RateLimited", message: "Too many raw submissions.", retryAfterSeconds: rawRateLimit.retryAfterSeconds });
+      }
+
+      if (["Completed", "Cancelled", "Failed"].includes(searchRun.status)) {
+        return reply.code(409).send({ error: `SearchRun${searchRun.status}`, message: `Search run is ${searchRun.status}.` });
+      }
+
+      const parsedBody = pluginRawCandidateSubmissionSchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return reply.code(400).send({ error: "ValidationError", issues: formatZodError(parsedBody.error) });
+      }
+      const body = parsedBody.data;
+
+      if (body.payloads.length > maxRawPayloadsPerRequest) {
+        return reply.code(413).send({
+          error: "PayloadTooLarge",
+          message: `Too many payloads: max ${maxRawPayloadsPerRequest} per request.`,
+        });
+      }
+
+      const mapping = getPlatformMapping(body.sourcePlatform);
+      if (!mapping) {
+        return reply.code(400).send({
+          error: "ValidationError",
+          message: `Unknown sourcePlatform "${body.sourcePlatform}". Known: ${knownPlatforms().join(", ")}.`,
+        });
+      }
+
+      const jobProfile = await jobProfiles.findById(searchRun.jobProfileId);
+      if (!jobProfile) {
+        return reply.code(422).send({ error: "SearchRunInvalid", message: "Search run job profile was not found." });
+      }
+
+      let parsed;
+      try {
+        parsed = parseRawPayloads(body.payloads, mapping);
+      } catch (error) {
+        if (error instanceof RawPayloadLimitError) {
+          return reply.code(400).send({ error: "ValidationError", message: error.message });
+        }
+        throw error;
+      }
+
+      // 幂等摘要取自原始请求体，映射升级后重放同一批次仍幂等（docs/30 §4b）
+      const requestDigest = createHash("sha256")
+        .update(JSON.stringify({ sourcePlatform: body.sourcePlatform, payloads: body.payloads }))
+        .digest("hex");
+
+      let accepted: SearchRun;
+      try {
+        accepted = await pluginCandidateService.acceptCandidates(
+          searchRun,
+          jobProfile,
+          parsed.drafts,
+          body.batchId,
+          requestDigest,
+        );
+      } catch (error) {
+        if (error instanceof BatchConflictError) {
+          return reply.code(409).send({ error: "BatchConflict", message: error.message });
+        }
+        throw error;
+      }
+
+      await parseDiagnostics.save({
+        searchRunId: searchRun.id,
+        batchId: body.batchId,
+        sourcePlatform: body.sourcePlatform,
+        mappingVersion: parsed.diagnostics.mappingVersion,
+        captureVersion: body.captureVersion,
+        geeksExtracted: parsed.diagnostics.geeksExtracted,
+        draftsParsed: parsed.diagnostics.draftsParsed,
+        rejected: parsed.diagnostics.rejected,
+        rejectedReasons: parsed.diagnostics.rejectedReasons,
+        keyCensus: parsed.diagnostics.keyCensus,
+        createdAt: new Date(),
+      });
+
+      const latest = await searchRuns.findById(accepted.id);
+      return reply.code(202).send({
+        searchRunId: latest?.id ?? accepted.id,
+        status: latest?.status ?? accepted.status,
+        rawSubmittedCount: latest?.rawSubmittedCount ?? accepted.rawSubmittedCount,
+        acceptedCount: (latest?.rawSubmittedCount ?? accepted.rawSubmittedCount) - searchRun.rawSubmittedCount,
+        candidateCount: latest?.candidates.length ?? accepted.candidates.length,
+        parse: parsed.diagnostics,
+      });
+    },
+  );
+
+  // §4c 解析诊断：返回该 SearchRun 各批次的解析统计与字段名普查（keyCensus）
+  app.get<{ Params: { id: string } }>(
+    "/api/plugin/search-runs/:id/parse-diagnostics",
+    async (request, reply) => {
+      const currentUser = await authenticateRequest(request.headers.authorization, "plugin");
+      if (currentUser.status !== "valid") {
+        return sendAuthFailure(reply, currentUser.status, "Plugin authentication is required.");
+      }
+
+      const searchRun = await searchRuns.findById(request.params.id);
+      if (!searchRun) {
+        return reply.code(404).send({ error: "SearchRunNotFound", message: "Search run was not found." });
+      }
+      if (!canAccessSearchRun(searchRun, currentUser)) {
+        return reply.code(403).send({ error: "AuthError", message: "Plugin cannot access this search run." });
+      }
+
+      // 响应形状遵循 docs/31 的 RawParseDiagnostic（rejectedCount / rejectReasonCounts）。
+      // 注意与 §4b POST 的 parse 块命名（rejected / rejectedReasons）不一致——这是既有文档间的
+      // 命名漂移，此处各自贴合对应端点的契约，待后续统一。
+      const records = await parseDiagnostics.findBySearchRunId(searchRun.id);
+      return reply.code(200).send({
+        diagnostics: records.map((r) => ({
+          batchId: r.batchId,
+          sourcePlatform: r.sourcePlatform,
+          mappingVersion: r.mappingVersion,
+          captureVersion: r.captureVersion,
+          geeksExtracted: r.geeksExtracted,
+          draftsParsed: r.draftsParsed,
+          rejectedCount: r.rejected,
+          rejectReasonCounts: r.rejectedReasons,
+          keyCensus: r.keyCensus,
+          createdAt: r.createdAt,
+        })),
+      });
+    },
+  );
 
   app.post<{ Params: { id: string; candidateId: string } }>(
     "/api/plugin/search-runs/:id/candidates/:candidateId/resume-attachment",
@@ -916,6 +1084,14 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       return reply.code(422).send({
         error: error.name,
         message: error.message,
+      });
+    }
+
+    // 请求体超过路由 bodyLimit（如 §4b 8MB 上限）→ PayloadTooLarge
+    if (error.statusCode === 413) {
+      return reply.code(413).send({
+        error: "PayloadTooLarge",
+        message: "Request body exceeds the allowed size.",
       });
     }
 

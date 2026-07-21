@@ -10,6 +10,7 @@ import {
   PrismaSearchRunRepository,
   PrismaUserRepository,
   PrismaPluginCandidateBatchRepository,
+  PrismaParseDiagnosticsRepository,
   PrismaCandidateAssessmentRepository,
   PrismaReassessmentLockRepository,
   PrismaClarificationInterviewSessionRepository,
@@ -55,6 +56,7 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     pluginAggregationQueue: searchRunQueue,
     users: new PrismaUserRepository(prisma),
     pluginCandidateBatches: new PrismaPluginCandidateBatchRepository(prisma),
+    parseDiagnostics: new PrismaParseDiagnosticsRepository(prisma),
     candidateAssessments: new PrismaCandidateAssessmentRepository(prisma),
     reassessmentLocks: new PrismaReassessmentLockRepository(prisma),
     clarificationInterviews: new PrismaClarificationInterviewSessionRepository(prisma),
@@ -68,6 +70,7 @@ export function createProductionApp(options: CreateProductionAppOptions = {}): F
     rateLimiter,
     pluginRateLimits: {
       candidateSubmissionPerWindow: Number(process.env.PLUGIN_CANDIDATE_RATE_LIMIT ?? 60),
+      rawSubmissionPerWindow: Number(process.env.PLUGIN_RAW_RATE_LIMIT ?? 30),
       attachmentUploadPerWindow: Number(process.env.PLUGIN_ATTACHMENT_RATE_LIMIT ?? 30),
       windowSeconds: Number(process.env.PLUGIN_RATE_LIMIT_WINDOW_SECONDS ?? 60),
     },

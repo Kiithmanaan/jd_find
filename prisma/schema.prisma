@@ -103,6 +103,7 @@ model SearchRunRecord {
   candidates         CandidateResultRecord[]
   aiAssessmentAudits AIAssessmentAuditRecord[]
   pluginCandidateBatches PluginCandidateBatchRecord[]
+  pluginParseDiagnostics PluginParseDiagnosticsRecord[]
   candidateAssessments CandidateAssessmentRecord[]
   refinementSuggestions SearchRefinementSuggestionRecord[]
   createdAt          DateTime
@@ -129,6 +130,25 @@ model PluginCandidateBatchRecord {
 
   @@unique([searchRunId, batchId])
   @@index([searchRunId, status])
+}
+
+model PluginParseDiagnosticsRecord {
+  id              String   @id @default(cuid())
+  searchRunId     String
+  batchId         String
+  sourcePlatform  String
+  mappingVersion  String
+  captureVersion  String?
+  geeksExtracted  Int
+  draftsParsed    Int
+  rejected        Int
+  rejectedReasons Json
+  keyCensus       Json
+  createdAt       DateTime @default(now())
+  searchRun       SearchRunRecord @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@unique([searchRunId, batchId])
+  @@index([searchRunId])
 }
 
 model CandidateAssessmentRecord {

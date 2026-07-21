@@ -11,6 +11,7 @@ import type {
   SearchRun,
   User,
   PluginCandidateBatch,
+  ParseDiagnosticsRecord,
   CandidateAssessmentRecord,
 } from "../domain/types.js";
 import type {
@@ -121,6 +122,12 @@ export interface PluginCandidateBatchRepository {
   claim(batch: PluginCandidateBatch): Promise<PluginBatchClaim>;
   complete(searchRunId: string, batchId: string): Promise<void>;
   fail(searchRunId: string, batchId: string, reason: string): Promise<void>;
+}
+
+export interface ParseDiagnosticsRepository {
+  // 按 (searchRunId, batchId) upsert，支持重放/映射升级后覆盖
+  save(record: ParseDiagnosticsRecord): Promise<void>;
+  findBySearchRunId(searchRunId: string): Promise<ParseDiagnosticsRecord[]>;
 }
 
 export interface CandidateAssessmentRepository {

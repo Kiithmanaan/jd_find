@@ -8,6 +8,7 @@ import type {
   UserRepository,
   PluginCandidateBatchRepository,
   PluginBatchClaim,
+  ParseDiagnosticsRepository,
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
   ClarificationInterviewSessionRepository,
@@ -23,6 +24,7 @@ import type {
   SearchRun,
   User,
   PluginCandidateBatch,
+  ParseDiagnosticsRecord,
   CandidateAssessmentRecord,
 } from "../../domain/types.js";
 import type { ClarificationInterviewSession } from "../../domain/clarification-interview.js";
@@ -99,6 +101,21 @@ export class InMemoryPluginCandidateBatchRepository implements PluginCandidateBa
     const key = `${searchRunId}:${batchId}`;
     const record = this.records.get(key);
     if (record) this.records.set(key, { ...record, status, failureReason });
+  }
+}
+
+export class InMemoryParseDiagnosticsRepository implements ParseDiagnosticsRepository {
+  private readonly records = new Map<string, ParseDiagnosticsRecord>();
+
+  async save(record: ParseDiagnosticsRecord): Promise<void> {
+    this.records.set(`${record.searchRunId}:${record.batchId}`, structuredClone(record));
+  }
+
+  async findBySearchRunId(searchRunId: string): Promise<ParseDiagnosticsRecord[]> {
+    return Array.from(this.records.values())
+      .filter((r) => r.searchRunId === searchRunId)
+      .map((r) => structuredClone(r))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
 }
 

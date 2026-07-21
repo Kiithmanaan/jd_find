@@ -4,14 +4,25 @@
 
 import { mapBossGeek, type BossGeekLike } from "./field-map.js";
 import { scrapeVisibleCandidates, countVisibleCards } from "./scrape-dom.js";
-import type { CandidateDraft, SessionState } from "../lib/types.js";
+import type { CandidateDraft, RawPayload, SessionState } from "../lib/types.js";
 
 const EVENT_NAME = "jdfind:boss-json";
-// 采样开关：首次抓到候选人 JSON 时打一条到 console，便于校准 field-map（见 README）
+// 采样开关：首次抓到候选人 JSON 时打一条到 console，便于校准服务端 mapping（见 README）
 let DEBUG_LOGGED = false;
 
-// 指纹 → 候选人缓冲
-const buffer = new Map<string, CandidateDraft>();
+// 主路径缓冲：捕获到的原始载荷（按 url+内容去重）
+const rawBuffer = new Map<string, RawPayload>();
+// 兜底缓冲：客户端解析出的候选人（按指纹去重），仅当 §4b 返回 404/5xx 时使用（docs/30 §4d）
+const draftBuffer = new Map<string, CandidateDraft>();
+
+function hashKey(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
 
 // ---- 从任意 JSON 里启发式提取「像候选人」的对象数组 ----
 function looksLikeGeek(o: Record<string, unknown>): boolean {
@@ -38,33 +49,36 @@ function collectGeeks(node: unknown, out: BossGeekLike[], depth = 0): void {
   }
 }
 
-function ingest(url: string, json: unknown): void {
+function ingest(payload: RawPayload): void {
   const geeks: BossGeekLike[] = [];
-  collectGeeks(json, geeks);
-  if (geeks.length === 0) return;
+  collectGeeks(payload.json, geeks);
+  if (geeks.length === 0) return; // 不含候选人的响应不缓冲
+
+  // 缓冲原始载荷（主路径）
+  const key = hashKey(`${payload.url ?? ""}|${JSON.stringify(payload.json)}`);
+  if (!rawBuffer.has(key)) rawBuffer.set(key, payload);
 
   if (!DEBUG_LOGGED) {
     DEBUG_LOGGED = true;
-    // 校准用：把首个候选人对象原样打出来，据此修正 field-map.ts
-    console.log("[jd_find] 采样 Boss 候选人 JSON（来自", url, "）：", geeks[0]);
+    // 校准用：把首个候选人对象原样打出来，据此修正服务端 platform-mappings.ts
+    console.log("[jd_find] 采样 Boss 候选人 JSON（来自", payload.url, "）：", geeks[0]);
   }
 
-  let added = 0;
+  // 同时客户端解析作兜底缓冲
   for (const g of geeks) {
     const draft = mapBossGeek(g);
-    if (draft && !buffer.has(draft.fingerprint)) {
-      buffer.set(draft.fingerprint, draft);
-      added += 1;
-    }
+    if (draft && !draftBuffer.has(draft.fingerprint)) draftBuffer.set(draft.fingerprint, draft);
   }
-  if (added > 0) updatePanelCounts();
+  updatePanelCounts();
 }
 
 window.addEventListener(EVENT_NAME, (e: Event) => {
   try {
     const detail = (e as CustomEvent).detail;
     const parsed = typeof detail === "string" ? JSON.parse(detail) : detail;
-    if (parsed && typeof parsed === "object") ingest(parsed.url ?? "", parsed.json);
+    if (parsed && typeof parsed === "object") {
+      ingest({ url: parsed.url, matched: parsed.matched, capturedAt: parsed.capturedAt, json: parsed.json });
+    }
   } catch {
     /* ignore */
   }
@@ -78,7 +92,7 @@ let resultEl: HTMLElement | null = null;
 
 function updatePanelCounts(): void {
   if (countEl) {
-    countEl.textContent = `已捕获 ${buffer.size} 人 · 本页卡片 ${countVisibleCards()}`;
+    countEl.textContent = `已捕获 ${rawBuffer.size} 批载荷 / ${draftBuffer.size} 人 · 本页卡片 ${countVisibleCards()}`;
   }
 }
 
@@ -103,13 +117,14 @@ async function onCapture(): Promise<void> {
   if (!resultEl) return;
   resultEl.textContent = "抓取中…";
 
-  // 合并 hook 缓冲 + DOM 兑底，按指纹去重
-  const merged = new Map(buffer);
+  const payloads = Array.from(rawBuffer.values());
+  // 兜底候选人：客户端解析缓冲 + DOM 卡片兑底，按指纹去重
+  const fallback = new Map(draftBuffer);
   for (const c of scrapeVisibleCandidates()) {
-    if (!merged.has(c.fingerprint)) merged.set(c.fingerprint, c);
+    if (!fallback.has(c.fingerprint)) fallback.set(c.fingerprint, c);
   }
-  const candidates = Array.from(merged.values());
-  if (candidates.length === 0) {
+
+  if (payloads.length === 0 && fallback.size === 0) {
     resultEl.textContent = "本页未捕获到候选人。滚动浏览列表让页面加载数据后再试。";
     return;
   }
@@ -118,15 +133,28 @@ async function onCapture(): Promise<void> {
     ok: boolean;
     submitted?: number;
     accepted?: number;
+    draftsParsed?: number;
+    rejected?: number;
+    mappingVersion?: string;
+    usedFallback?: boolean;
     runStatus?: string;
     stopped?: boolean;
     error?: { code: string; message: string };
-  }>({ type: "SUBMIT_CANDIDATES", candidates, sourcePlatform: "Boss" });
+  }>({
+    type: "SUBMIT_RAW",
+    payloads,
+    sourcePlatform: "Boss",
+    fallbackCandidates: Array.from(fallback.values()),
+  });
 
   if (res.ok) {
-    resultEl.textContent = `已提交 ${res.submitted} 人，新增接收 ${res.accepted} 人（run 状态：${res.runStatus ?? "-"}）。`;
+    const via = res.usedFallback
+      ? `客户端兜底解析，提交 ${res.submitted} 人`
+      : `服务端解析 ${res.draftsParsed ?? 0} 人（丢弃 ${res.rejected ?? 0}）`;
+    resultEl.textContent = `${via}，新增接收 ${res.accepted ?? 0} 人（run 状态：${res.runStatus ?? "-"}）。`;
     resultEl.className = "jdf-result jdf-ok";
-    buffer.clear();
+    rawBuffer.clear();
+    draftBuffer.clear();
     updatePanelCounts();
   } else {
     const stopHint = res.stopped ? "（该 SearchRun 已终止/需重新登录，请处理后重试）" : "";

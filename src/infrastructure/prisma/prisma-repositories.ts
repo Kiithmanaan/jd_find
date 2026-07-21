@@ -7,6 +7,7 @@ import type {
   UserRepository,
   PluginCandidateBatchRepository,
   PluginBatchClaim,
+  ParseDiagnosticsRepository,
   CandidateAssessmentRepository,
   ReassessmentLockRepository,
   ClarificationInterviewSessionRepository,
@@ -22,6 +23,7 @@ import type {
   SearchRun,
   User,
   PluginCandidateBatch,
+  ParseDiagnosticsRecord,
   CandidateAssessmentRecord,
 } from "../../domain/types.js";
 import {
@@ -52,7 +54,7 @@ import {
 
 export type PrismaLikeClient = Pick<
   PrismaClient,
-  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord" | "clarificationInterviewSessionRecord" | "searchRefinementSuggestionRecord"
+  "userRecord" | "jobProfileRecord" | "jobProfileVersionRecord" | "searchRunRecord" | "hardConditionDimensionRecord" | "hardConditionOptionRecord" | "pluginCandidateBatchRecord" | "pluginParseDiagnosticsRecord" | "candidateAssessmentRecord" | "reassessmentLockRecord" | "clarificationInterviewSessionRecord" | "searchRefinementSuggestionRecord"
 >;
 
 export class PrismaSearchRefinementSuggestionRepository implements SearchRefinementSuggestionRepository {
@@ -168,6 +170,50 @@ export class PrismaPluginCandidateBatchRepository implements PluginCandidateBatc
   }
   async fail(searchRunId: string, batchId: string, reason: string): Promise<void> {
     await this.prisma.pluginCandidateBatchRecord.update({ where: { searchRunId_batchId: { searchRunId, batchId } }, data: { status: "failed", failureReason: reason } });
+  }
+}
+
+export class PrismaParseDiagnosticsRepository implements ParseDiagnosticsRepository {
+  constructor(private readonly prisma: PrismaLikeClient) {}
+
+  async save(record: ParseDiagnosticsRecord): Promise<void> {
+    const data = {
+      sourcePlatform: record.sourcePlatform,
+      mappingVersion: record.mappingVersion,
+      captureVersion: record.captureVersion ?? null,
+      geeksExtracted: record.geeksExtracted,
+      draftsParsed: record.draftsParsed,
+      rejected: record.rejected,
+      rejectedReasons: record.rejectedReasons,
+      keyCensus: record.keyCensus,
+      createdAt: record.createdAt,
+    };
+    // 按 (searchRunId, batchId) upsert：支持重放/映射升级后覆盖
+    await this.prisma.pluginParseDiagnosticsRecord.upsert({
+      where: { searchRunId_batchId: { searchRunId: record.searchRunId, batchId: record.batchId } },
+      create: { searchRunId: record.searchRunId, batchId: record.batchId, ...data },
+      update: data,
+    });
+  }
+
+  async findBySearchRunId(searchRunId: string): Promise<ParseDiagnosticsRecord[]> {
+    const rows = await this.prisma.pluginParseDiagnosticsRecord.findMany({
+      where: { searchRunId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((r) => ({
+      searchRunId: r.searchRunId,
+      batchId: r.batchId,
+      sourcePlatform: r.sourcePlatform,
+      mappingVersion: r.mappingVersion,
+      captureVersion: r.captureVersion ?? undefined,
+      geeksExtracted: r.geeksExtracted,
+      draftsParsed: r.draftsParsed,
+      rejected: r.rejected,
+      rejectedReasons: (r.rejectedReasons ?? {}) as Record<string, number>,
+      keyCensus: (r.keyCensus ?? {}) as Record<string, number>,
+      createdAt: r.createdAt,
+    }));
   }
 }
 

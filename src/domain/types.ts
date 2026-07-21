@@ -239,6 +239,21 @@ export interface PluginCandidateBatch {
   failureReason?: string;
 }
 
+// 原始载荷解析诊断（docs/30 §4c）。按 (searchRunId, batchId) 唯一。
+export interface ParseDiagnosticsRecord {
+  searchRunId: Identifier;
+  batchId: string;
+  sourcePlatform: string;
+  mappingVersion: string;
+  captureVersion?: string;
+  geeksExtracted: number;
+  draftsParsed: number;
+  rejected: number;
+  rejectedReasons: Record<string, number>;
+  keyCensus: Record<string, number>;
+  createdAt: Date;
+}
+
 export interface CandidateAssessmentRecord {
   id: Identifier;
   candidateId: Identifier;

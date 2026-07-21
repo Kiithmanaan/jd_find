@@ -1,6 +1,12 @@
-import { getSearchRunStatus, pluginLogin, submitCandidates } from "../lib/api-client.js";
-import { PluginApiError, type CandidateDraft, type RuntimeMessage, type SessionState } from "../lib/types.js";
-import { MAX_CANDIDATES_PER_BATCH } from "../lib/config.js";
+import { getSearchRunStatus, pluginLogin, submitCandidates, submitRawCandidates } from "../lib/api-client.js";
+import {
+  PluginApiError,
+  type CandidateDraft,
+  type RawPayload,
+  type RuntimeMessage,
+  type SessionState,
+} from "../lib/types.js";
+import { CAPTURE_VERSION, MAX_CANDIDATES_PER_BATCH, MAX_PAYLOADS_PER_BATCH } from "../lib/config.js";
 import {
   clearSession,
   getActiveSearchRunId,
@@ -34,61 +40,145 @@ async function buildSession(): Promise<SessionState> {
 
 interface SubmitOutcome {
   ok: boolean;
-  submitted: number;
+  submitted: number; // §4b：payload 数；fallback：候选人数
   accepted: number;
+  draftsParsed?: number; // §4b 服务端解析出的候选人数
+  rejected?: number;
+  mappingVersion?: string;
+  usedFallback?: boolean;
   runStatus?: string;
   stopped?: boolean; // 命中终态，插件应停止
   error?: { code: string; message: string };
 }
 
-// 分批提交，内置限流退避与终态检测。每批 ≤ MAX_CANDIDATES_PER_BATCH。
-async function handleSubmit(
+// 通用分批重试执行器：仅对 RateLimited/InternalError 退避重试，命中终态/AuthError 立即停止。
+async function runBatches<T>(
+  count: number,
+  submitOne: (batchIndex: number) => Promise<T>,
+  onResult: (res: T) => void,
+): Promise<{ ok: boolean; stopped?: boolean; runStatusFromError?: string; error?: PluginApiError }> {
+  for (let batchIndex = 0; batchIndex < count; batchIndex += 1) {
+    let attempt = 0;
+    for (;;) {
+      try {
+        onResult(await submitOne(batchIndex));
+        break;
+      } catch (error) {
+        if (!(error instanceof PluginApiError)) {
+          return { ok: false, error: new PluginApiError("InternalError", String(error), 0) };
+        }
+        if (TERMINAL_CODES.has(error.code)) {
+          return { ok: false, stopped: true, runStatusFromError: error.code, error };
+        }
+        if (error.code === "AuthError") return { ok: false, stopped: true, error };
+        if ((error.code === "RateLimited" || error.code === "InternalError") && attempt < 3) {
+          attempt += 1;
+          await sleep((error.retryAfterSeconds ?? 5 * attempt) * 1000);
+          continue;
+        }
+        return { ok: false, error };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+// 主路径：分批提交原始载荷（每批 ≤ MAX_PAYLOADS_PER_BATCH）。§4b 返回 404/5xx 时回退客户端解析（docs/30 §4d）。
+async function handleSubmitRaw(
+  searchRunId: string,
+  payloads: RawPayload[],
+  sourcePlatform: string,
+  fallbackCandidates: CandidateDraft[],
+): Promise<SubmitOutcome> {
+  const stamp = Date.now();
+  let accepted = 0;
+  let draftsParsed = 0;
+  let rejected = 0;
+  let mappingVersion: string | undefined;
+  let lastStatus: string | undefined;
+
+  const batchCount = Math.ceil(payloads.length / MAX_PAYLOADS_PER_BATCH) || 1;
+  const outcome = await runBatches(
+    batchCount,
+    (i) =>
+      submitRawCandidates(searchRunId, {
+        batchId: `raw-boss-${stamp}-${i}`,
+        sourcePlatform,
+        captureVersion: CAPTURE_VERSION,
+        payloads: payloads.slice(i * MAX_PAYLOADS_PER_BATCH, (i + 1) * MAX_PAYLOADS_PER_BATCH),
+      }),
+    (res) => {
+      accepted += res.acceptedCount;
+      draftsParsed += res.parse.draftsParsed;
+      rejected += res.parse.rejected;
+      mappingVersion = res.parse.mappingVersion;
+      lastStatus = res.status;
+    },
+  );
+
+  if (outcome.ok) {
+    return { ok: true, submitted: payloads.length, accepted, draftsParsed, rejected, mappingVersion, runStatus: lastStatus };
+  }
+
+  // §4d：仅当 §4b 返回 404/5xx 时，客户端解析兜底
+  const err = outcome.error;
+  const shouldFallback =
+    !outcome.stopped &&
+    err !== undefined &&
+    (err.httpStatus === 404 || err.httpStatus >= 500) &&
+    fallbackCandidates.length > 0;
+  if (shouldFallback) {
+    const fb = await handleSubmitCandidates(searchRunId, fallbackCandidates, sourcePlatform);
+    return { ...fb, usedFallback: true };
+  }
+
+  return {
+    ok: false,
+    submitted: payloads.length,
+    accepted,
+    draftsParsed,
+    rejected,
+    mappingVersion,
+    stopped: outcome.stopped,
+    runStatus: outcome.runStatusFromError,
+    error: err ? { code: err.code, message: err.message } : undefined,
+  };
+}
+
+// 兜底路径：客户端已解析候选人，走 §4 /candidates。
+async function handleSubmitCandidates(
   searchRunId: string,
   candidates: CandidateDraft[],
   sourcePlatform: string,
 ): Promise<SubmitOutcome> {
+  const stamp = Date.now();
   let accepted = 0;
   let lastStatus: string | undefined;
-  const stamp = Date.now();
 
-  for (let i = 0; i < candidates.length; i += MAX_CANDIDATES_PER_BATCH) {
-    const chunk = candidates.slice(i, i + MAX_CANDIDATES_PER_BATCH);
-    const batchId = `boss-${stamp}-${i / MAX_CANDIDATES_PER_BATCH}`;
+  const batchCount = Math.ceil(candidates.length / MAX_CANDIDATES_PER_BATCH) || 1;
+  const outcome = await runBatches(
+    batchCount,
+    (i) =>
+      submitCandidates(searchRunId, {
+        batchId: `boss-fb-${stamp}-${i}`,
+        sourcePlatform,
+        candidates: candidates.slice(i * MAX_CANDIDATES_PER_BATCH, (i + 1) * MAX_CANDIDATES_PER_BATCH),
+      }),
+    (res) => {
+      accepted += res.acceptedCount;
+      lastStatus = res.status;
+    },
+  );
 
-    // 单批最多重试 3 次（仅对 RateLimited / InternalError 退避重试）
-    let attempt = 0;
-    for (;;) {
-      try {
-        const res = await submitCandidates(searchRunId, {
-          batchId,
-          sourcePlatform,
-          candidates: chunk,
-        });
-        accepted += res.acceptedCount;
-        lastStatus = res.status;
-        break;
-      } catch (error) {
-        if (!(error instanceof PluginApiError)) {
-          return { ok: false, submitted: candidates.length, accepted, error: { code: "InternalError", message: String(error) } };
-        }
-        if (TERMINAL_CODES.has(error.code)) {
-          return { ok: false, submitted: candidates.length, accepted, runStatus: error.code, stopped: true, error: { code: error.code, message: error.message } };
-        }
-        if (error.code === "AuthError") {
-          return { ok: false, submitted: candidates.length, accepted, stopped: true, error: { code: error.code, message: error.message } };
-        }
-        if ((error.code === "RateLimited" || error.code === "InternalError") && attempt < 3) {
-          attempt += 1;
-          const backoff = (error.retryAfterSeconds ?? 5 * attempt) * 1000;
-          await sleep(backoff);
-          continue;
-        }
-        return { ok: false, submitted: candidates.length, accepted, error: { code: error.code, message: error.message } };
-      }
-    }
-  }
-
-  return { ok: true, submitted: candidates.length, accepted, runStatus: lastStatus };
+  const err = outcome.error;
+  return {
+    ok: outcome.ok,
+    submitted: candidates.length,
+    accepted,
+    stopped: outcome.stopped,
+    runStatus: outcome.ok ? lastStatus : outcome.runStatusFromError,
+    error: err ? { code: err.code, message: err.message } : undefined,
+  };
 }
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
@@ -116,13 +206,15 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           sendResponse({ ok: true, session: await buildSession() });
           break;
 
-        case "SUBMIT_CANDIDATES": {
+        case "SUBMIT_RAW": {
           const runId = await getActiveSearchRunId();
           if (!runId) {
             sendResponse({ ok: false, error: { code: "NoActiveRun", message: "未设置目标 SearchRun，请先在插件中填入 searchRunId。" } });
             break;
           }
-          sendResponse(await handleSubmit(runId, message.candidates, message.sourcePlatform));
+          sendResponse(
+            await handleSubmitRaw(runId, message.payloads, message.sourcePlatform, message.fallbackCandidates),
+          );
           break;
         }
 

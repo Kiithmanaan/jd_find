@@ -52,12 +52,16 @@ export class PluginCandidateService {
     jobProfile: JobProfile,
     candidates: CandidateDraft[],
     batchId: string,
+    // §4b /raw-candidates 传入原始请求体摘要，使幂等判定基于原始载荷而非解析结果，
+    // 映射升级后重放同一批次仍幂等（docs/30 §4b）。§4 不传，退回按解析后候选人摘要。
+    requestDigest?: string,
   ): Promise<SearchRun> {
-    const requestDigest = createHash("sha256").update(JSON.stringify(candidates)).digest("hex");
+    const digest =
+      requestDigest ?? createHash("sha256").update(JSON.stringify(candidates)).digest("hex");
     const claim = await this.deps.pluginBatches.claim({
       searchRunId: searchRun.id,
       batchId,
-      requestDigest,
+      requestDigest: digest,
       candidateCount: candidates.length,
       status: "processing",
     });

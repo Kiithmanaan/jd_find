@@ -34,6 +34,34 @@ export interface CandidateSubmission {
   candidates: CandidateDraft[];
 }
 
+// §4b 原始载荷
+export interface RawPayload {
+  url?: string;
+  matched?: "exact" | "heuristic";
+  capturedAt?: string;
+  json: unknown;
+}
+
+export interface RawCandidateSubmission {
+  batchId: string;
+  sourcePlatform: string;
+  captureVersion?: string;
+  payloads: RawPayload[];
+}
+
+export interface ParseDiagnostics {
+  mappingVersion: string;
+  geeksExtracted: number;
+  draftsParsed: number;
+  rejected: number;
+  rejectedReasons: Record<string, number>;
+  keyCensus: Record<string, number>;
+}
+
+export interface RawSubmissionResponse extends SubmissionResponse {
+  parse: ParseDiagnostics;
+}
+
 export interface LoginResponse {
   token: string;
   tokenType: string;
@@ -87,7 +115,8 @@ export type RuntimeMessage =
   | { type: "LOGOUT" }
   | { type: "GET_SESSION" }
   | { type: "SET_ACTIVE_RUN"; searchRunId: string }
-  | { type: "SUBMIT_CANDIDATES"; candidates: CandidateDraft[]; sourcePlatform: string }
+  // 主路径：提交原始载荷（服务端解析）。fallbackCandidates 供 §4b 返回 404/5xx 时客户端兜底（docs/30 §4d）。
+  | { type: "SUBMIT_RAW"; payloads: RawPayload[]; sourcePlatform: string; fallbackCandidates: CandidateDraft[] }
   | { type: "GET_RUN_STATUS" };
 
 export interface SessionState {

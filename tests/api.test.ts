@@ -1540,6 +1540,133 @@ test("API 拒绝非法 SourceLead URL", async () => {
   assert.equal(response.json().error, "ValidationError");
 });
 
+test("插件原始载荷提交：服务端解析、落库、诊断可查、结构超限拒绝", async () => {
+  const users = new InMemoryUserRepository([createUser("user-1", "hunter@example.test", "secret")]);
+  const searchRuns = new InMemorySearchRunRepository();
+  const jobProfiles = new InMemoryJobProfileRepository();
+  const app = createApp({
+    idGenerator: () => "plugin-run-raw",
+    users,
+    searchRuns,
+    jobProfiles,
+    auth: { enabled: true, jwtSecret: "test-secret", webTokenTtlSeconds: 3600, pluginTokenTtlSeconds: 3600 },
+  });
+
+  const webToken = (await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  })).json().token;
+  await app.inject({
+    method: "POST",
+    url: "/api/search-runs/one-time",
+    headers: { authorization: `Bearer ${webToken}` },
+    payload: { jobProfile: createConfirmedJobProfile(), sourceType: "plugin", targetResultCount: 10 },
+  });
+  const pluginToken = (await app.inject({
+    method: "POST",
+    url: "/api/plugin/auth/login",
+    payload: { email: "hunter@example.test", password: "secret" },
+  })).json().token;
+
+  // Boss 原始响应：一个可解析 geek + 一个缺城市的 geek（应被拒 missingCity）
+  const rawBody = {
+    batchId: "raw-1",
+    sourcePlatform: "Boss",
+    captureVersion: "0.2.0",
+    payloads: [
+      {
+        url: "https://www.zhipin.com/wapi/zpgeek/rec/geek/list?page=1",
+        matched: "exact",
+        json: {
+          zpData: {
+            geekList: [
+              { encryptGeekId: "ENC1", geekName: "候选甲", expectPositionName: "解决方案顾问", cityName: "上海", degreeName: "本科", geekWorkYear: "8年" },
+              { encryptGeekId: "ENC2", geekName: "候选乙", expectPositionName: "销售", degreeName: "大专", geekWorkYear: "2年" },
+            ],
+          },
+        },
+      },
+    ],
+  };
+
+  const submit = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-raw/raw-candidates",
+    headers: { authorization: `Bearer ${pluginToken}` },
+    payload: rawBody,
+  });
+  assert.equal(submit.statusCode, 202);
+  const sb = submit.json();
+  assert.equal(sb.parse.geeksExtracted, 2);
+  assert.equal(sb.parse.draftsParsed, 1);
+  assert.equal(sb.parse.rejected, 1);
+  assert.equal(sb.parse.rejectedReasons.missingCity, 1);
+  assert.equal(sb.rawSubmittedCount, 1);
+  assert.ok(sb.parse.keyCensus.encryptGeekId >= 2);
+
+  // 解析后确实落到 SearchRun（服务端解析）
+  const saved = await searchRuns.findById("plugin-run-raw");
+  assert.equal(saved?.rawSubmittedCount, 1);
+  assert.equal(saved?.candidates[0]?.resume.name, "候选甲");
+
+  // 幂等：同 batchId 重放（原始体摘要一致）不重复计数
+  const replay = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-raw/raw-candidates",
+    headers: { authorization: `Bearer ${pluginToken}` },
+    payload: rawBody,
+  });
+  assert.equal(replay.statusCode, 202);
+  assert.equal((await searchRuns.findById("plugin-run-raw"))?.rawSubmittedCount, 1);
+
+  // 诊断可查
+  const diag = await app.inject({
+    method: "GET",
+    url: "/api/plugin/search-runs/plugin-run-raw/parse-diagnostics",
+    headers: { authorization: `Bearer ${pluginToken}` },
+  });
+  assert.equal(diag.statusCode, 200);
+  const diagnostics = diag.json().diagnostics;
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].mappingVersion, "boss-2026-07-20.1");
+  assert.equal(diagnostics[0].draftsParsed, 1);
+  assert.equal(diagnostics[0].rejectedCount, 1);
+  assert.equal(diagnostics[0].rejectReasonCounts.missingCity, 1);
+
+  // 未知平台 → ValidationError
+  const unknown = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-raw/raw-candidates",
+    headers: { authorization: `Bearer ${pluginToken}` },
+    payload: { batchId: "raw-x", sourcePlatform: "Zhaopin", payloads: [{ json: {} }] },
+  });
+  assert.equal(unknown.statusCode, 400);
+  assert.equal(unknown.json().error, "ValidationError");
+
+  // 结构超限（字符串 > 512）→ ValidationError
+  const oversize = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-raw/raw-candidates",
+    headers: { authorization: `Bearer ${pluginToken}` },
+    payload: {
+      batchId: "raw-big",
+      sourcePlatform: "Boss",
+      payloads: [{ json: { geekName: "x", geekId: 1, note: "a".repeat(600) } }],
+    },
+  });
+  assert.equal(oversize.statusCode, 400);
+  assert.equal(oversize.json().error, "ValidationError");
+
+  // 无 token → 401
+  const noAuth = await app.inject({
+    method: "POST",
+    url: "/api/plugin/search-runs/plugin-run-raw/raw-candidates",
+    payload: rawBody,
+  });
+  assert.equal(noAuth.statusCode, 401);
+});
+
 test("插件状态端点用 plugin token 返回状态与计数，且不含候选人明细", async () => {
   const users = new InMemoryUserRepository([
     createUser("user-1", "hunter@example.test", "secret"),
